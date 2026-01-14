@@ -8,22 +8,55 @@ I'm a Full Stack Software Development student at **Get Building**, based in Newf
 
 - 🎓 Currently studying **Full Stack Software Development** with Get Building  
 - 🎓 Bachelor's Degree in **Mechanical Engineering** @ Memorial University from Memorial University of Newfoundland
-- 🚀 Passionate about building innovative software using modern technologies  
-- 💡 Proficient in **HTML**, **CSS**, and **JavaScript**
+- 🚀 Building full-stack applications with modern tools and best practices  
+- 💡 Strong interest in web apps, APIs, and clean, scalable code  
+- 📈 Currently developing a production-style financing platform (**NLP Finance**)
 
 ---
 
-### 🛠️ Languages and Tools
+### 🛠️ Languages & Tools
 
-![HTML](https://img.shields.io/badge/HTML5-E34F26?style=flat-square&logo=html5&logoColor=white)
-![CSS](https://img.shields.io/badge/CSS3-1572B6?style=flat-square&logo=css3&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+**Frontend**
+- HTML, CSS, JavaScript
+- **TypeScript**
+- **React**
+
+**Backend & APIs**
+- Node.js
+- REST APIs
+- **Postman**
+
+**Databases**
+- **PostgreSQL**
+- **pgAdmin**
+
+**Other**
+- Git & GitHub
 
 ---
 
-### 📁 Projects
+### 🚀 Featured Projects
 
-- [🏌️ Golf Tourney](https://github.com/tyleranthony11/Golf-Tourney)
+#### 💼 NLP Finance Web Application
+A full-stack powersports & vehicle financing platform.
+
+- **Frontend (React + TypeScript)**  
+  👉 https://github.com/tyleranthony11/NLP-Finance-App
+
+- **Backend API (Node.js + PostgreSQL)**  
+  👉 https://github.com/tyleranthony11/nlp-finance-api
+
+**Key features include:**
+- Customer financing applications
+- Dealer and marketplace workflows
+- Admin dashboard for leads, inventory, and funded deals
+- RESTful API with PostgreSQL database
+
+---
+
+#### 🏌️ Golf Tourney
+A tournament management project built earlier in my development journey.  
+👉 https://github.com/tyleranthony11/Golf-Tourney
 
 ---
 
