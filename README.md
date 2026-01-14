@@ -43,7 +43,7 @@ A full-stack powersports marketplace & financing platform.
 
 **Key features include:**
 - Customer financing applications
-- Dealer and marketplace workflows
+- Powersports Marketplace
 - Admin dashboard for leads, inventory, and funded deals
 - RESTful API with PostgreSQL database
 
