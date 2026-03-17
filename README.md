@@ -1,15 +1,14 @@
 ## Hi 👋, I'm Tyler Anthony
 
-I'm a Full Stack Software Development student at **Get Building**, based in Newfoundland & Labrador, Canada.
+Software Developer with a Mechanical Engineering background, focused on building practical, scalable web applications.
 
 ---
 
 ### 👨‍💻 About Me
 
-- 🎓 Currently studying **Full Stack Software Development** with Get Building  
-- 🎓 Bachelor's Degree in **Mechanical Engineering** @ Memorial University from Memorial University of Newfoundland
-- 🚀 Building full-stack applications with modern tools and best practices  
-- 💡 Strong interest in web apps, APIs, and clean, scalable code  
+- 💻 Full Stack Software Developer (React, Node.js, TypeScript)   
+- 🎓 Mechanical Engineering Graduate – Memorial University of Newfoundland
+- 🚀 Building real-world applications with a focus on usability and clean architecture    
 - 📈 Currently developing a production-style financing platform (**NLP Finance**)
 
 ---
@@ -33,7 +32,7 @@ I'm a Full Stack Software Development student at **Get Building**, based in Newf
 ### 🚀 Featured Projects
 
 #### 💼 NLP Finance Web Application
-A full-stack powersports marketplace & financing platform.
+Full-stack financing and marketplace application for powersports, automotive, and recreational vehicles.
 
 - **Frontend (React + TypeScript)**  
   👉 https://github.com/tyleranthony11/NLP-Finance-App
@@ -41,9 +40,9 @@ A full-stack powersports marketplace & financing platform.
 - **Backend API (Node.js + PostgreSQL)**  
   👉 https://github.com/tyleranthony11/nlp-finance-api
 
-**Key features include:**
+**Highlights:**
 - Customer financing applications
-- Powersports Marketplace
+- Marketplace with vehicle listings and filtering
 - Admin dashboard for leads, inventory, and funded deals
 - RESTful API with PostgreSQL database
 
@@ -57,7 +56,7 @@ A tournament management project built earlier in my development journey.
 
 ### 📫 Connect With Me
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Tyler%20Anthony-blue?style=flat-square&logo=linkedin)](https://www.linkedin.com/in/tyler-anthony-911483364/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Tyler%20Anthony-blue?style=flat-square&logo=linkedin)](https://www.linkedin.com/in/tyleranthony1/)
 
 ---
 
