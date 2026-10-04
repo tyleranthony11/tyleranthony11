@@ -1,0 +1,9 @@
+{
+  "name": "Life Tracker",
+  "short_name": "Life",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#2463eb",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
