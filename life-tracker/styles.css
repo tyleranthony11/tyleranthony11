@@ -64,13 +64,13 @@ html, body { margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.45 "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-text-size-adjust: 100%;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 
 header.top {
-  position: sticky; top: 0; z-index: 10;
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -223,3 +223,16 @@ details summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
   .datenav .label { min-width: 80px; }
   .meal-slot { grid-template-columns: 60px 1fr 62px; }
 }
+
+/* display face: condensed, scoreboard-like, for headings and numbers */
+h1, .card h2, .big, .stat .v, .datenav .label { font-family: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif; letter-spacing: .01em; }
+.top-row h1 { font-size: 20px; }
+.card h2 { font-size: 18px; text-wrap: balance; }
+.stat .v { font-size: 24px; }
+.stat .v, td.num, .meter .lbl { font-variant-numeric: tabular-nums; }
+.brand { display: flex; flex-direction: column; min-width: 0; }
+.sync { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sync.synced { color: var(--good); }
+.sync.error, .sync.full { color: var(--bad); }
+.armed { background: var(--bad-soft) !important; color: var(--bad) !important; border-color: var(--bad) !important; font-size: 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

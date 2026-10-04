@@ -135,8 +135,71 @@ function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) return migrate(JSON.parse(raw)); } catch (e) { /* fall through */ }
   return defaults();
 }
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('⚠️ Could not save — browser storage is blocked'); }
+function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage blocked */ } }
+function save() { saveLocal(); scheduleCloud(); }
+
+/* ---------- cloud sync: when opened as a claude.ai Artifact, data is kept in your private per-user store ---------- */
+const cloud = { col: null, status: 'local', saved: {}, timer: null, writing: false, pending: false, dirty: false };
+function sections(s) {
+  const out = {
+    settings: { v: s.settings }, nutrition: { v: s.nutrition }, water: { v: s.water }, weights: { v: s.weights },
+    gym: { v: { split: s.gym.split, schedule: s.gym.schedule } }, events: { v: s.events }, meals: { v: s.meals },
+    groceries: { v: s.groceries }, tasks: { v: s.tasks }, meta: { v: { version: s.version, created: s.created } },
+  };
+  for (const [k, l] of Object.entries(s.gym.logs)) {
+    const id = 'gymlogs-' + l.date.slice(0, 7);
+    (out[id] = out[id] || { v: {} }).v[k] = l;
+  }
+  return out;
+}
+function fromSections(docs) {
+  const s = { gym: { logs: {} } };
+  for (const [id, v] of Object.entries(docs)) {
+    if (id.startsWith('gymlogs-')) Object.assign(s.gym.logs, v);
+    else if (id === 'gym') Object.assign(s.gym, v);
+    else if (id === 'meta') Object.assign(s, v);
+    else s[id] = v;
+  }
+  return migrate(s);
+}
+const SYNC_LABEL = { local: 'Saved on this device', saving: 'Saving…', synced: 'Synced', error: 'Not synced — retrying on next change', full: 'Cloud storage full' };
+function setSync(st) { cloud.status = st; const el = $('#sync'); if (el) { el.textContent = SYNC_LABEL[st]; el.className = 'sync ' + st; } }
+function scheduleCloud() { if (!cloud.col) return; cloud.dirty = true; clearTimeout(cloud.timer); cloud.timer = setTimeout(cloudFlush, 800); }
+async function cloudFlush() {
+  if (!cloud.col) return;
+  if (cloud.writing) { cloud.pending = true; return; }
+  cloud.writing = true; cloud.pending = false; setSync('saving');
+  try {
+    const secs = sections(S);
+    for (const [id, body] of Object.entries(secs)) {
+      const json = JSON.stringify(body);
+      if (cloud.saved[id] === json) continue;
+      await cloud.col.doc(id).set(body); cloud.saved[id] = json;
+    }
+    for (const id of Object.keys(cloud.saved)) if (!secs[id]) { await cloud.col.doc(id).delete(); delete cloud.saved[id]; }
+    setSync('synced');
+  } catch (e) { setSync(e && e.code === 'quota_exceeded' ? 'full' : 'error'); }
+  cloud.writing = false;
+  if (cloud.pending) cloudFlush(); else cloud.dirty = false;
+}
+async function cloudPull(first) {
+  if (cloud.dirty || cloud.writing) return;
+  const snap = await cloud.col.limit(1000).get();
+  if (snap.empty) { if (first) await cloudFlush(); return; }
+  const docs = {}; cloud.saved = {};
+  for (const d of snap.docs) { const body = d.data(); docs[d.id] = body.v; cloud.saved[d.id] = JSON.stringify(body); }
+  S = fromSections(docs); saveLocal(); render(); setSync('synced');
+}
+async function cloudInit() {
+  if (!window.claude || !window.claude.use) return;
+  try {
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    const id = db && user ? await user.id() : null;
+    if (!id) return;
+    cloud.col = db.collection('data/users/' + id); // private to you, even if the page is shared
+    await cloudPull(true);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloudPull(false).catch(() => {}); });
+  } catch (e) { setSync('error'); }
 }
 function prefGet(k, d) { try { return localStorage.getItem('lifeTracker.ui.' + k) ?? d; } catch (e) { return d; } }
 function prefSet(k, v) { try { localStorage.setItem('lifeTracker.ui.' + k, v); } catch (e) { /* ignore */ } }
@@ -236,7 +299,7 @@ function render() {
   $('#app').innerHTML = `
     <header class="top">
       <div class="top-row">
-        <h1>🏒 Life Tracker</h1>
+        <div class="brand"><h1>🏒 Life Tracker</h1><span id="sync" class="sync ${cloud.status}">${SYNC_LABEL[cloud.status]}</span></div>
         <div class="datenav">
           <button class="icon-btn" data-act="day" data-n="-1" aria-label="Previous day">◀</button>
           <span class="label">${isToday ? 'Today' : fmtDate(ui.date)}</span>
@@ -694,7 +757,18 @@ function importMFP(text) {
   return Object.keys(days).length;
 }
 
-function download(name, text) {
+// In-page confirmation: first tap arms the button, second tap within 3 s runs it.
+function armed(el, label = 'Tap again') {
+  if (el.dataset.armed) return true;
+  const old = el.innerHTML; el.dataset.armed = '1'; el.textContent = label; el.classList.add('armed');
+  setTimeout(() => { if (el.isConnected) { delete el.dataset.armed; el.innerHTML = old; el.classList.remove('armed'); } }, 3000);
+  return false;
+}
+async function download(name, text) {
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (dl) { await dl.save({ filename: name, data: text }); return; }
+  } catch (e) { if (e && e.code && e.code !== 'unavailable') return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -715,15 +789,15 @@ const CLICK = {
   },
   clearNut: () => { delete S.nutrition[ui.date]; commit(); },
   editRoutine: () => { ui.editRoutine = !ui.editRoutine; render(); },
-  gymClear: () => {
+  gymClear: el => {
     const dayId = ui.gymDay || gymDayFor(ui.date) || S.gym.split[0]?.id;
-    if (confirm('Delete this session?')) { delete S.gym.logs[`${ui.date}|${dayId}`]; commit(); }
+    if (armed(el)) { delete S.gym.logs[`${ui.date}|${dayId}`]; commit(); }
   },
   exAdd: el => { splitById(el.dataset.day).exercises.push({ id: uid(), name: 'New exercise', sets: 3, repMin: 8, repMax: 12, inc: 5 }); commit(); },
   exDel: el => { const d = splitById(el.dataset.day); d.exercises = d.exercises.filter(e => e.id !== el.dataset.ex); commit(); },
   dayAdd: () => { S.gym.split.push({ id: uid(), name: 'New day', exercises: [] }); commit(); },
   dayDel: el => {
-    if (!confirm('Delete this training day? Logged sessions are kept.')) return;
+    if (!armed(el)) return;
     S.gym.split = S.gym.split.filter(d => d.id !== el.dataset.day);
     for (const k of Object.keys(S.gym.schedule)) if (S.gym.schedule[k] === el.dataset.day) delete S.gym.schedule[k];
     commit();
@@ -740,7 +814,7 @@ const CLICK = {
     const mon = dowOf(st) === 1 ? st : nextMonday(st);
     genHockeyBlock(mon); commit(`Hockey block added: ${fmtDate(mon)} – ${fmtDate(addDays(mon, 27))}`);
   },
-  clearBlock: () => { if (confirm('Remove all generated hockey-block sessions?')) { S.events = S.events.filter(e => !e.block); commit(); } },
+  clearBlock: el => { if (armed(el, 'Tap again to remove')) { S.events = S.events.filter(e => !e.block); commit(); } },
   gAdd: el => {
     const st = el.dataset.store; const name = $('#gi_' + st).value.trim(); if (!name) return;
     S.groceries.items.push({ id: uid(), name, store: st, qty: $('#gq_' + st).value.trim(), staple: $('#gs_' + st).checked, checked: false }); commit();
@@ -757,13 +831,13 @@ const CLICK = {
     const c = el.dataset.cat; const name = $('#tn_' + c).value.trim(); if (!name) return;
     S.tasks.push({ id: uid(), cat: c, name, freq: Math.max(1, num($('#tf_' + c).value) || 1), when: $('#tw_' + c)?.value || '', history: [] }); commit();
   },
-  taskDel: el => { if (confirm('Delete this task?')) { S.tasks = S.tasks.filter(t => t.id !== el.dataset.id); commit(); } },
+  taskDel: el => { if (armed(el, 'Delete?')) { S.tasks = S.tasks.filter(t => t.id !== el.dataset.id); commit(); } },
   macroCalc: () => {
     const s = S.settings; s.fat = Math.round((s.calories * 0.25) / 9);
     s.carbs = Math.max(0, Math.round((s.calories - s.protein * 4 - s.fat * 9) / 4)); commit('Macros updated');
   },
   export: () => download(`life-tracker-backup-${todayISO()}.json`, JSON.stringify(S, null, 2)),
-  reset: () => { if (confirm('Erase ALL data and restore defaults? Export a backup first!')) { S = defaults(); commit('Reset'); } },
+  reset: el => { if (armed(el, 'Tap again to erase everything')) { S = defaults(); commit('Reset'); } },
 };
 
 const CHANGE = {
@@ -831,3 +905,4 @@ document.addEventListener('change', async ev => {
 document.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches('input[type=text], input[type=number]')) ev.target.blur(); });
 
 render();
+cloudInit();
