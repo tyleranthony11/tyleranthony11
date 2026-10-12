@@ -20,9 +20,10 @@ const EVENT_TYPES = {
   cardio: { label: 'Cardio', icon: '🚴' },
 };
 const TABS = [
-  ['today', 'Today'], ['food', 'Nutrition'], ['gym', 'Gym'], ['cardio', 'Cardio & Hockey'],
-  ['meals', 'Meals & Groceries'], ['routines', 'Routines'], ['progress', 'Weight'], ['settings', 'Settings'],
+  ['today', 'Today', '🏠'], ['food', 'Food', '🍽️'], ['gym', 'Gym', '🏋️'], ['cardio', 'Hockey', '🏒'],
+  ['meals', 'Meals', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
+const QUEST_DEFAULTS = { cal: true, protein: true, water: true, train: true, routines: true, weigh: false };
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -58,7 +59,7 @@ function defaults() {
     version: 1,
     settings: {
       unit: 'lb', calories: 3200, protein: 180, carbs: 380, fat: 95,
-      waterTarget: 3500, goalWeight: 0, weeklyGain: 0.5, theme: 'auto',
+      waterTarget: 3500, goalWeight: 0, weeklyGain: 0.5, theme: 'auto', streakQuests: { ...QUEST_DEFAULTS },
     },
     nutrition: {},   // date -> {cal, protein, carbs, fat, src}
     water: {},       // date -> ml
@@ -126,6 +127,7 @@ function migrate(s) {
   const d = defaults();
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
   s.settings = { ...d.settings, ...s.settings };
+  s.settings.streakQuests = { ...QUEST_DEFAULTS, ...(s.settings.streakQuests || {}) };
   s.gym = { ...d.gym, ...s.gym };
   s.meals = { ...d.meals, ...s.meals };
   s.groceries = { ...d.groceries, ...s.groceries };
@@ -163,7 +165,7 @@ function fromSections(docs) {
   return migrate(s);
 }
 const SYNC_LABEL = { local: 'Saved on this device', saving: 'Saving…', synced: 'Synced', error: 'Not synced — retrying on next change', full: 'Cloud storage full' };
-function setSync(st) { cloud.status = st; const el = $('#sync'); if (el) { el.textContent = SYNC_LABEL[st]; el.className = 'sync ' + st; } }
+function setSync(st) { cloud.status = st; const el = $('#sync'); if (el) { el.title = SYNC_LABEL[st]; el.className = 'sync-dot ' + st; } if (st === 'error' || st === 'full') toast(SYNC_LABEL[st]); }
 function scheduleCloud() { if (!cloud.col) return; cloud.dirty = true; clearTimeout(cloud.timer); cloud.timer = setTimeout(cloudFlush, 800); }
 async function cloudFlush() {
   if (!cloud.col) return;
@@ -293,25 +295,116 @@ function weeklyRate(ws, endDate, days = 21) {
 }
 
 /* ---------- rendering ---------- */
+/* ---------- daily quests & streak ---------- */
+function trainingFor(d) {
+  const dayId = gymDayFor(d); const evs = S.events.filter(e => e.date === d);
+  const lifted = Object.values(S.gym.logs).some(l => l.date === d && Object.values(l.entries).some(sets => sets.some(x => num(x.r) > 0)));
+  const parts = [];
+  if (dayId) parts.push({ name: splitById(dayId)?.name || 'Workout', done: lifted, tab: 'gym' });
+  for (const e of evs) parts.push({ name: (EVENT_TYPES[e.type] || EVENT_TYPES.cardio).label, done: !!e.done, tab: 'cardio' });
+  return parts;
+}
+function routinesFor(d) {
+  // daily tasks always count; less frequent tasks count once they've been logged at least once and come due
+  return S.tasks.filter(t => { const st = taskStatus(t, d); return st.doneToday || (st.due && (st.last || t.freq === 1)); });
+}
+function quests(d) {
+  const s = S.settings, n = nut(d), req = { ...QUEST_DEFAULTS, ...s.streakQuests };
+  const water = S.water[d] || 0;
+  const train = trainingFor(d), trainDone = train.filter(p => p.done).length;
+  const rt = routinesFor(d), rtDone = rt.filter(t => t.history.includes(d)).length;
+  const weighed = S.weights.some(w => w.date === d);
+  const q = [
+    { k: 'cal', icon: '🍽️', title: `Eat ${s.calories.toLocaleString()} kcal`, val: n.cal, max: s.calories, done: n.cal >= s.calories * 0.9, unit: 'kcal', go: 'food' },
+    { k: 'protein', icon: '🥩', title: `Get ${s.protein} g protein`, val: n.protein, max: s.protein, done: n.protein >= s.protein * 0.9, unit: 'g', go: 'food' },
+    { k: 'water', icon: '💧', title: `Drink ${round(s.waterTarget / 1000, 1)} L of water`, val: water, max: s.waterTarget, done: water >= s.waterTarget, unit: 'ml', go: 'water' },
+    train.length
+      ? { k: 'train', icon: '🏋️', title: train.length === 1 ? `Finish ${train[0].name}` : `Finish ${train.length} training sessions`, sub: train.length > 1 ? train.map(p => (p.done ? '✓ ' : '') + p.name).join(' · ') : '', val: trainDone, max: train.length, done: trainDone >= train.length, go: train.find(p => !p.done)?.tab || 'gym' }
+      : { k: 'train', icon: '😴', title: 'Rest day', sub: 'Recovery counts. Stretch and go for a walk.', val: 1, max: 1, done: true, rest: true },
+    { k: 'routines', icon: '🧼', title: 'Do your routines', sub: rtDone >= rt.length ? (rt.length ? 'All done' : 'Nothing due') : `${rt.length - rtDone} left: ${[...new Set(rt.filter(t => !t.history.includes(d)).map(t => TASK_CATS[t.cat].label.toLowerCase()))].join(', ')}`, val: rtDone, max: rt.length || 1, done: rtDone >= rt.length, go: 'routinesCard' },
+    { k: 'weigh', icon: '⚖️', title: 'Weigh in', val: weighed ? 1 : 0, max: 1, done: weighed, go: 'todayWeight' },
+  ];
+  q.forEach(x => { x.required = !!req[x.k]; });
+  return q;
+}
+const DAY_BONUS = 20;
+function dayInfo(d) {
+  const q = quests(d); const reqd = q.filter(x => x.required);
+  const complete = reqd.length > 0 && reqd.every(x => x.done);
+  const xp = sum(q.filter(x => x.done && !x.rest).map(x => (x.required ? 10 : 5))) + (complete ? DAY_BONUS : 0);
+  return { q, complete, xp, doneCount: reqd.filter(x => x.done).length, reqCount: reqd.length };
+}
+function streakStats() {
+  const today = todayISO(); const start = S.created && S.created < today ? S.created : addDays(today, -1);
+  const memo = {}; const info = d => memo[d] || (memo[d] = dayInfo(d));
+  let streak = info(today).complete ? 1 : 0; let d = addDays(today, -1);
+  while (d >= start && info(d).complete) { streak++; d = addDays(d, -1); }
+  let best = 0, run = 0, total = 0;
+  for (let x = start; x <= today; x = addDays(x, 1)) { const i = info(x); total += i.xp; run = i.complete ? run + 1 : 0; best = Math.max(best, run); }
+  return { streak, best: Math.max(best, streak), totalXp: total, todayDone: info(today).complete, info };
+}
+function weekStrip(st) {
+  const today = todayISO(); const mon = startOfWeek(today);
+  return `<div class="week">${Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(mon, i); const c = d <= today && st.info(d).complete;
+    const cls = c ? 'on' : d === today ? 'today' : d > today ? 'future' : 'miss';
+    return `<div class="wd ${cls}"><span>${DOW[dowOf(d)][0]}</span><i>${c ? '✓' : ''}</i></div>`;
+  }).join('')}</div>`;
+}
+function questTile(x) {
+  const pct = Math.min(100, x.max ? (x.val / x.max) * 100 : 0);
+  const label = x.unit === 'ml' ? `${round(x.val / 1000, 1)} / ${round(x.max / 1000, 1)} L` : x.unit ? `${round(x.val, 0).toLocaleString()} / ${round(x.max, 0).toLocaleString()} ${x.unit}` : `${x.val} / ${x.max}`;
+  let action = '';
+  if (!x.done && x.go === 'water') action = '<button class="btn primary sm" data-act="water" data-n="500">+500 ml</button>';
+  else if (!x.done && x.go) action = `<button class="btn sm" data-act="go" data-go="${x.go}">Go</button>`;
+  return `<div class="quest ${x.done ? 'done' : ''}">
+    <div class="q-icon">${x.icon}${x.done ? '<b class="q-check">✓</b>' : ''}</div>
+    <div class="q-body"><div class="q-title">${esc(x.title)}${x.required ? '' : ' <span class="pill">Bonus</span>'}</div>
+      ${x.sub ? `<div class="q-sub">${esc(x.sub)}</div>` : ''}
+      ${x.rest ? '' : `<div class="qbar"><span style="width:${pct}%"></span><em>${label}</em></div>`}</div>
+    <div class="q-act">${action}</div></div>`;
+}
+function celebrate(n) {
+  const el = document.createElement('div'); el.className = 'celebrate'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Day complete');
+  el.innerHTML = `<div class="cel-inner"><div class="cel-flame">🔥</div><div class="cel-num">${n}</div>
+    <div class="cel-label">day streak!</div><p>You finished every quest today. Come back tomorrow to keep it going.</p>
+    ${weekStrip(streakStats())}<button class="btn primary big-btn" id="celClose">Continue</button></div>`;
+  document.body.appendChild(el);
+  const close = () => el.remove();
+  el.querySelector('#celClose').addEventListener('click', close); el.addEventListener('click', e => { if (e.target === el) close(); });
+  el.querySelector('#celClose').focus();
+}
+
 function render() {
   document.documentElement.dataset.theme = S.settings.theme === 'auto' ? '' : S.settings.theme;
   if (S.settings.theme === 'auto') delete document.documentElement.dataset.theme;
   const isToday = ui.date === todayISO();
+  const st = ui.stats = streakStats();
+  const todayXp = st.info(todayISO()).xp;
   $('#app').innerHTML = `
+    <nav class="bnav" aria-label="Sections">
+      <div class="side-brand">life<span>tracker</span></div>
+      ${TABS.map(([k, l, ic]) => `<button data-act="tab" data-tab="${k}" class="${ui.tab === k ? 'on' : ''}" aria-label="${l}"><span class="ic">${ic}</span><span class="tl">${l}</span></button>`).join('')}
+      <button data-act="tab" data-tab="settings" class="side-only ${ui.tab === 'settings' ? 'on' : ''}"><span class="ic">⚙️</span><span class="tl">Settings</span></button>
+    </nav>
     <header class="top">
       <div class="top-row">
-        <div class="brand"><h1>🏒 Life Tracker</h1><span id="sync" class="sync ${cloud.status}">${SYNC_LABEL[cloud.status]}</span></div>
-        <div class="datenav">
-          <button class="icon-btn" data-act="day" data-n="-1" aria-label="Previous day">◀</button>
-          <span class="label">${isToday ? 'Today' : fmtDate(ui.date)}</span>
-          <button class="icon-btn" data-act="day" data-n="1" aria-label="Next day">▶</button>
-          ${isToday ? '' : '<button class="btn sm" data-act="day" data-n="0">Today</button>'}
+        <div class="stats">
+          <button class="chip flame ${st.todayDone ? 'lit' : ''}" data-act="tab" data-tab="today" title="${st.todayDone ? 'Streak extended today' : 'Finish today\'s quests to extend your streak'}">🔥 <b>${st.streak}</b></button>
+          <span class="chip xp" title="XP earned today">⚡ <b>${todayXp}</b></span>
         </div>
+        <div class="datenav">
+          <button class="icon-btn" data-act="day" data-n="-1" aria-label="Previous day">‹</button>
+          <button class="label" data-act="day" data-n="0" title="Jump to today">${isToday ? 'Today' : fmtDate(ui.date, { weekday: 'short', month: 'short', day: 'numeric' })}</button>
+          <button class="icon-btn" data-act="day" data-n="1" aria-label="Next day">›</button>
+        </div>
+        <button class="icon-btn gear ${ui.tab === 'settings' ? 'on' : ''}" data-act="tab" data-tab="settings" aria-label="Settings">⚙️<span id="sync" class="sync-dot ${cloud.status}" title="${SYNC_LABEL[cloud.status]}"></span></button>
       </div>
-      <nav class="tabs">${TABS.map(([k, l]) => `<button data-act="tab" data-tab="${k}" class="${ui.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
     </header>
     <main>${VIEWS[ui.tab]()}</main>`;
   if (ui.tab === 'progress') mountChart();
+  if (ui.todayDone === false && st.todayDone) celebrate(st.streak);
+  ui.todayDone = st.todayDone;
 }
 
 function meter(label, val, target, unit = '', cls = '') {
@@ -484,7 +577,26 @@ const VIEWS = {
     const meals = S.meals.plan[dow] || [];
     const logged = dayId && S.gym.logs[`${d}|${dayId}`];
     const w = S.weights.find(x => x.date === d);
+    const st = ui.stats; const di = st.info(d) || dayInfo(d); const isToday = d === todayISO();
+    const msg = isToday
+      ? (di.complete ? `Streak extended! See you tomorrow.` : st.streak > 0 ? `Finish ${di.reqCount - di.doneCount} more quest${di.reqCount - di.doneCount === 1 ? '' : 's'} to keep your ${st.streak}-day streak.` : `Finish today's quests to start a streak.`)
+      : (di.complete ? 'Day complete.' : `${di.doneCount} of ${di.reqCount} quests done.`);
+    const qs = [...di.q].sort((a, b) => (b.required - a.required));
     return `<div class="grid">
+      <section class="card wide hero ${di.complete ? 'complete' : ''}">
+        <div class="hero-top">
+          <div class="hero-flame ${st.todayDone ? 'lit' : ''}">🔥</div>
+          <div class="hero-text"><div class="hero-num">${st.streak}</div><div class="hero-label">day streak</div></div>
+          <div class="hero-side"><div><b>${st.best}</b><span>best</span></div><div><b>${st.totalXp.toLocaleString()}</b><span>total XP</span></div></div>
+        </div>
+        <p class="hero-msg">${esc(msg)}</p>
+        ${weekStrip(st)}
+      </section>
+      <section class="card wide quests">
+        <h2>Daily quests <span class="pill ${di.complete ? 'good' : 'accent'}">${di.doneCount} / ${di.reqCount}</span></h2>
+        ${qs.map(questTile).join('')}
+        <p class="muted small">Finish every quest that isn't marked Bonus to keep your streak. Choose which quests count in Settings.</p>
+      </section>
       ${aiCard()}
       ${macroCard(true)}
       ${waterCard()}
@@ -504,7 +616,7 @@ const VIEWS = {
       <div class="card"><h2>🥗 Today's meals</h2>
         ${MEAL_SLOTS.map((s, i) => `<div class="row small"><span class="muted" style="width:70px">${s}</span><span>${esc(meals[i] || '—')}</span></div>`).join('')}
         ${trips.length ? `<div class="note">🛒 Grocery day: <b>${trips.join(' + ')}</b>. <a href="#" data-act="tab" data-tab="meals">Open list</a></div>` : ''}</div>
-      <div class="card wide"><h2>✅ Routines due today <span class="muted small">${due.filter(t => t.history.includes(d)).length}/${due.length} done</span></h2>
+      <div class="card wide" id="routinesCard"><h2>✅ Routines due today <span class="muted small">${due.filter(t => t.history.includes(d)).length}/${due.length} done</span></h2>
         <div class="grid">${Object.entries(TASK_CATS).map(([k, c]) => {
           const list = due.filter(t => t.cat === k);
           return list.length ? `<div><h3>${c.icon} ${c.label}</h3>${taskRows(list, d)}</div>` : '';
@@ -728,12 +840,18 @@ const VIEWS = {
         <div class="row" style="margin-top:8px">${f('waterTarget', 'Water ml', 250)}</div>
         <p class="muted small">Bulk starting point: body weight (lb) × 16–18 kcal, protein 0.8–1 g per lb, fat ~25% of calories, carbs fill the rest. Set the same targets in MyFitnessPal.</p>
         <button class="btn sm" data-act="macroCalc">Fill macros from calories</button></div>
+      <div class="card"><h2>🔥 Streak rules</h2>
+        <p class="small">A day counts toward your streak when every ticked quest is done.</p>
+        ${[['cal', 'Eat your calorie target (90%+)'], ['protein', 'Hit your protein target (90%+)'], ['water', 'Drink your water target'], ['train', 'Finish scheduled training (rest days count automatically)'], ['routines', 'Do every routine that is due'], ['weigh', 'Weigh in']].map(([k, l]) =>
+          `<label class="check"><input type="checkbox" data-act="streakQ" data-k="${k}" ${({ ...QUEST_DEFAULTS, ...s.streakQuests })[k] ? 'checked' : ''}><span class="name">${l}</span></label>`).join('')}
+      </div>
+      <div class="card"><h2>☁️ Sync</h2><p class="small">${esc(SYNC_LABEL[cloud.status])}.${cloud.col ? ' Your data is saved to your private claude.ai storage and syncs across your devices.' : ' Your data is stored in this browser only. Export a backup regularly.'}</p></div>
       <div class="card"><h2>⚙️ Preferences</h2>
         <div class="row"><label class="field">Weight unit<select data-act="setting" data-k="unit"><option ${s.unit === 'lb' ? 'selected' : ''}>lb</option><option ${s.unit === 'kg' ? 'selected' : ''}>kg</option></select></label>
           <label class="field">Theme<select data-act="setting" data-k="theme">${['auto', 'light', 'dark'].map(t => `<option ${s.theme === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>
         <p class="muted small">Changing units doesn't convert past entries.</p></div>
       <div class="card"><h2>💾 Backup</h2>
-        <p class="small">Your data is stored only in this browser. Export a backup regularly, and import it to move to another device.</p>
+        <p class="small">Export a copy of all your data, or restore one you saved earlier.</p>
         <div class="row"><button class="btn primary" data-act="export">Export backup</button>
           <label class="btn">Import backup<input type="file" id="importFile" accept=".json,application/json" hidden></label></div>
         <button class="btn ghost danger sm" style="margin-top:10px" data-act="reset">Reset everything</button></div>
@@ -887,6 +1005,11 @@ async function download(name, text) {
 const CLICK = {
   tab: el => { ui.tab = el.dataset.tab; ui.editRoutine = false; prefSet('tab', ui.tab); render(); window.scrollTo(0, 0); },
   day: el => { const n = +el.dataset.n; ui.date = n === 0 ? todayISO() : addDays(ui.date, n); ui.gymDay = null; render(); },
+  go: el => {
+    const g = el.dataset.go; const target = document.getElementById(g);
+    if (target) { target.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' }); if (target.focus) target.focus({ preventScroll: true }); return; }
+    if (TABS.some(t => t[0] === g)) CLICK.tab({ dataset: { tab: g } });
+  },
   water: el => { S.water[ui.date] = Math.max(0, (S.water[ui.date] || 0) + +el.dataset.n); commit(); },
   logWeight: el => {
     const v = num($('#' + el.dataset.src).value); const date = el.dataset.date ? $('#' + el.dataset.date).value : ui.date;
@@ -1011,6 +1134,7 @@ const CHANGE = {
   storeEvery: el => { S.groceries.schedule[el.dataset.store].everyWeeks = Math.max(1, num(el.value) || 1); commit(); },
   storeDow: el => { S.groceries.schedule[el.dataset.store].dow = +el.value; commit(); },
   aiField: el => { const it = (ui.ai.pending || []).find(i => i.id === el.dataset.id); if (it) { it[el.dataset.k] = Math.max(0, Math.round(num(el.value))); render(); } },
+  streakQ: el => { S.settings.streakQuests = { ...QUEST_DEFAULTS, ...S.settings.streakQuests, [el.dataset.k]: el.checked }; commit(); },
   setting: el => { const k = el.dataset.k; S.settings[k] = ['unit', 'theme'].includes(k) ? el.value : num(el.value); commit(); },
   chartDays: el => { ui.chartDays = +el.value; render(); },
 };
