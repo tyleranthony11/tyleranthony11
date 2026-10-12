@@ -236,3 +236,16 @@ h1, .card h2, .big, .stat .v, .datenav .label { font-family: "Barlow Condensed",
 .sync.error, .sync.full { color: var(--bad); }
 .armed { background: var(--bad-soft) !important; color: var(--bad) !important; border-color: var(--bad) !important; font-size: 13px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* AI food logger */
+.ai-card { border-color: var(--accent); }
+.ai-card textarea { resize: vertical; min-height: 56px; }
+.ai-items { display: grid; gap: 10px; margin-bottom: 10px; }
+.ai-item { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
+.ai-head { display: flex; align-items: flex-start; gap: 8px; }
+.ai-head > span { flex: 1; min-width: 0; }
+.ai-head .icon-btn { flex: none; }
+.ai-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.ai-fields input { width: 100%; }
+.ai-total { font-size: 14px; font-variant-numeric: tabular-nums; }
+button[disabled] { opacity: .6; cursor: progress; }

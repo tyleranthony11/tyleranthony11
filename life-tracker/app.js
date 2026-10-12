@@ -205,7 +205,8 @@ function prefGet(k, d) { try { return localStorage.getItem('lifeTracker.ui.' + k
 function prefSet(k, v) { try { localStorage.setItem('lifeTracker.ui.' + k, v); } catch (e) { /* ignore */ } }
 
 let S = load();
-const ui = { tab: prefGet('tab', 'today'), date: todayISO(), gymDay: null, editRoutine: false, chartDays: 90 };
+const ui = { tab: prefGet('tab', 'today'), date: todayISO(), gymDay: null, editRoutine: false, chartDays: 90,
+  ai: { available: !!(window.claude && window.claude.use), images: false, text: '', photo: null, busy: false, pending: null, note: '', error: '' } };
 
 /* ---------- domain logic ---------- */
 const U = () => S.settings.unit;
@@ -364,6 +365,113 @@ function taskRows(tasks, date) {
   }).join('');
 }
 
+/* ---------- AI food logging (claude.ai "sample" capability: asks Claude on your own account) ---------- */
+const MACROS = ['cal', 'protein', 'carbs', 'fat'];
+const MACRO_LABEL = { cal: 'kcal', protein: 'Protein g', carbs: 'Carbs g', fat: 'Fat g' };
+let sampleFn = null;
+async function aiInit() {
+  if (!ui.ai.available) return;
+  try {
+    sampleFn = await window.claude.use('sample');
+    if (!sampleFn) { ui.ai.available = false; render(); return; }
+    const caps = await sampleFn.limits().catch(() => null);
+    ui.ai.images = !!(caps && caps.images);
+    render();
+  } catch (e) { ui.ai.available = false; render(); }
+}
+function recentFoods() {
+  const seen = new Map();
+  for (const d of Object.keys(S.nutrition).sort().reverse()) {
+    for (const it of S.nutrition[d].items || []) if (!seen.has(it.name.toLowerCase())) seen.set(it.name.toLowerCase(), it);
+    if (seen.size >= 25) break;
+  }
+  return [...seen.values()].map(i => `${i.name} (${i.qty || '1 serving'}): ${i.cal} kcal, P${i.protein} C${i.carbs} F${i.fat}`).join('\n');
+}
+async function aiEstimate() {
+  const text = ui.ai.text.trim();
+  if (!text && !ui.ai.photo) return toast('Describe what you ate first');
+  if (!sampleFn) return;
+  ui.ai.busy = true; ui.ai.error = ''; render();
+  const now = new Date(); const hhmm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const refs = recentFoods();
+  const prompt = `You log food for a calorie and macro tracker. Estimate calories and macros for what the person ate.
+Rules:
+- Split it into separate food items. Use the amounts given; otherwise assume a typical single serving and say what you assumed in "qty".
+- The person lives in Canada and shops at Sobeys and Costco (Kirkland Signature), so use Canadian products and portions when a brand matters.
+- "meal" is one of Breakfast, Lunch, Dinner, Snacks. Use what the person says; otherwise infer it from the time now (${hhmm}).
+- Numbers are whole numbers: cal in kcal; protein, carbs and fat in grams.
+- If a photo is attached it shows the food or a nutrition label; read the label values when visible.
+${refs ? `- The person has logged these foods before. When the same food appears, reuse these values:\n${refs}\n` : ''}
+Reply with only JSON in this shape:
+{"items":[{"name":"Large eggs","qty":"2 eggs","meal":"Breakfast","cal":144,"protein":12,"carbs":1,"fat":10}],"note":"one short sentence on any big assumption, or empty"}
+
+What they ate: ${text || '(see photo)'}`;
+  try {
+    const opts = { modelTier: 'quick' };
+    if (ui.ai.photo) opts.images = ui.ai.photo;
+    const res = await sampleFn.json(prompt, opts);
+    const items = (res && Array.isArray(res.items) ? res.items : []).map(i => ({
+      id: uid(), name: String(i.name || 'Food').slice(0, 80), qty: String(i.qty || '').slice(0, 60),
+      meal: MEAL_SLOTS.includes(i.meal) ? i.meal : 'Snacks',
+      cal: Math.max(0, Math.round(num(i.cal))), protein: Math.max(0, Math.round(num(i.protein))),
+      carbs: Math.max(0, Math.round(num(i.carbs))), fat: Math.max(0, Math.round(num(i.fat))),
+    }));
+    if (!items.length) ui.ai.error = "Couldn't find any food in that. Try listing what you ate and how much.";
+    else { ui.ai.pending = items; ui.ai.note = String((res && res.note) || '').slice(0, 200); }
+  } catch (e) {
+    const c = e && e.code;
+    if (c === 'not_granted' || c === 'sampling_disabled' || c === 'not_declared') { ui.ai.available = false; toast('AI logging is turned off for this page'); }
+    else if (c === 'rate_limited') ui.ai.error = 'Too many requests right now. Wait a minute and try again.';
+    else if (c === 'cancelled') ui.ai.error = '';
+    else if (c === 'image_rejected' || c === 'images_unavailable') ui.ai.error = "That photo couldn't be used. Try a JPEG or PNG, or describe the food instead.";
+    else ui.ai.error = "Couldn't estimate that. Try rephrasing, e.g. “2 eggs, 1 bagel with 2 tbsp peanut butter”.";
+  }
+  ui.ai.busy = false; render();
+}
+function addFoodItems(date, items, src) {
+  const n = S.nutrition[date] || (S.nutrition[date] = { cal: 0, protein: 0, carbs: 0, fat: 0 });
+  n.items = n.items || [];
+  for (const it of items) { n.items.push(it); for (const k of MACROS) n[k] = Math.round(num(n[k]) + num(it[k])); }
+  n.src = n.src && n.src !== src ? 'Mixed' : src;
+}
+function aiCard() {
+  if (!ui.ai.available) return '';
+  const a = ui.ai; const p = a.pending;
+  const tot = p ? Object.fromEntries(MACROS.map(k => [k, sum(p.map(i => num(i[k])))])) : null;
+  return `<div class="card ai-card"><h2>✨ Log food with AI <span class="muted small">${ui.date === todayISO() ? 'today' : fmtDate(ui.date)}</span></h2>
+    ${p ? `<p class="small">Check the estimate, fix any numbers, then add it.</p>
+      <div class="ai-items">
+        ${p.map(i => `<div class="ai-item">
+          <div class="ai-head"><span><b>${esc(i.name)}</b> <span class="muted small">${esc(i.qty)} · ${esc(i.meal)}</span></span>
+            <button class="icon-btn" data-act="aiItemDel" data-id="${i.id}" aria-label="Remove ${esc(i.name)}">✕</button></div>
+          <div class="ai-fields">${MACROS.map(k => `<label class="field">${MACRO_LABEL[k]}<input type="number" min="0" inputmode="numeric" id="ai_${i.id}_${k}" data-act="aiField" data-id="${i.id}" data-k="${k}" value="${i[k]}"></label>`).join('')}</div>
+        </div>`).join('')}
+        <div class="ai-total">Total: <b>${round(tot.cal, 0)} kcal</b> · P ${round(tot.protein, 0)} g · C ${round(tot.carbs, 0)} g · F ${round(tot.fat, 0)} g</div>
+      </div>
+      ${a.note ? `<p class="muted small">${esc(a.note)}</p>` : ''}
+      <div class="row"><button class="btn primary" data-act="aiAdd">Add to ${ui.date === todayISO() ? 'today' : fmtDate(ui.date)}</button>
+        <button class="btn ghost" data-act="aiDiscard">Discard</button></div>`
+    : `<textarea id="aiText" class="w-full" rows="2" placeholder="e.g. 3 eggs, 2 slices toast with butter, 500 ml chocolate milk" ${a.busy ? 'disabled' : ''}>${esc(a.text)}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" data-act="aiEstimate" ${a.busy ? 'disabled' : ''}>${a.busy ? 'Estimating…' : 'Estimate'}</button>
+        ${a.images ? `<label class="btn">${a.photo ? '📷 Photo added' : '📷 Add photo'}<input type="file" id="aiPhoto" accept="image/jpeg,image/png,image/webp" hidden></label>
+          ${a.photo ? '<button class="btn ghost sm" data-act="aiPhotoClear">Remove photo</button>' : ''}` : ''}
+      </div>
+      ${a.error ? `<p class="small" style="color:var(--bad)">${esc(a.error)}</p>` : ''}
+      <p class="muted small">Tip: tap the microphone on your phone keyboard to say it instead of typing. Estimates use your Claude account.</p>`}
+  </div>`;
+}
+function foodLogCard() {
+  const items = (S.nutrition[ui.date] && S.nutrition[ui.date].items) || [];
+  if (!items.length) return '';
+  return `<div class="card"><h2>🧾 Food logged ${ui.date === todayISO() ? 'today' : fmtDate(ui.date)}</h2>
+    ${MEAL_SLOTS.map(m => { const list = items.filter(i => i.meal === m); if (!list.length) return '';
+      return `<h3>${m} <span class="muted">· ${sum(list.map(i => i.cal))} kcal</span></h3>${list.map(i => `<div class="check">
+        <span class="name">${esc(i.name)} <span class="muted small">${esc(i.qty)}</span><br><span class="muted small">${i.cal} kcal · P${i.protein} C${i.carbs} F${i.fat}</span></span>
+        <button class="icon-btn" data-act="foodDel" data-id="${i.id}" aria-label="Delete ${esc(i.name)}">✕</button></div>`).join('')}`; }).join('')}
+  </div>`;
+}
+
 const VIEWS = {
   today() {
     const d = ui.date, dow = dowOf(d);
@@ -377,6 +485,7 @@ const VIEWS = {
     const logged = dayId && S.gym.logs[`${d}|${dayId}`];
     const w = S.weights.find(x => x.date === d);
     return `<div class="grid">
+      ${aiCard()}
       ${macroCard(true)}
       ${waterCard()}
       <div class="card"><h2>🏋️ Gym <span class="pill ${logged ? 'good' : ''}">${logged ? 'Logged' : DOW_LONG[dow]}</span></h2>
@@ -409,9 +518,11 @@ const VIEWS = {
     const logged = days.filter(d => S.nutrition[d] && S.nutrition[d].cal);
     const avg = k => logged.length ? sum(logged.slice(0, 7).map(d => S.nutrition[d][k])) / Math.min(7, logged.length) : 0;
     return `<div class="grid">
+      ${aiCard()}
       ${macroCard(false)}
+      ${foodLogCard()}
       <div class="card"><h2>✏️ Enter totals for ${fmtDate(ui.date)}</h2>
-        <p class="muted small">Copy the daily totals from MyFitnessPal's Diary (bottom of the day) — or import a CSV below.</p>
+        <p class="muted small">Copy the daily totals from MyFitnessPal's Diary (bottom of the day), or import a CSV below. Saving here replaces the day's totals; your AI-logged items stay listed.</p>
         <div class="row">
           <label class="field">Calories<input type="number" id="n_cal" value="${n.cal || ''}"></label>
           <label class="field">Protein g<input type="number" id="n_protein" value="${n.protein || ''}"></label>
@@ -784,8 +895,26 @@ const CLICK = {
   },
   weightDel: el => { S.weights = S.weights.filter(w => w.date !== el.dataset.date); commit(); },
   saveNut: () => {
-    S.nutrition[ui.date] = { cal: num($('#n_cal').value), protein: num($('#n_protein').value), carbs: num($('#n_carbs').value), fat: num($('#n_fat').value), src: 'Manual' };
+    const prev = S.nutrition[ui.date];
+    S.nutrition[ui.date] = { cal: num($('#n_cal').value), protein: num($('#n_protein').value), carbs: num($('#n_carbs').value), fat: num($('#n_fat').value), src: 'Manual', items: (prev && prev.items) || [] };
     commit('Saved');
+  },
+  aiEstimate: () => aiEstimate(),
+  aiDiscard: () => { ui.ai.pending = null; ui.ai.note = ''; render(); },
+  aiItemDel: el => { ui.ai.pending = ui.ai.pending.filter(i => i.id !== el.dataset.id); if (!ui.ai.pending.length) ui.ai.pending = null; render(); },
+  aiPhotoClear: () => { ui.ai.photo = null; render(); },
+  aiAdd: () => {
+    const items = ui.ai.pending || []; if (!items.length) return;
+    addFoodItems(ui.date, items, 'AI');
+    const kcal = sum(items.map(i => i.cal));
+    ui.ai.pending = null; ui.ai.note = ''; ui.ai.text = ''; ui.ai.photo = null;
+    commit(`Added ${items.length} item${items.length > 1 ? 's' : ''} · ${kcal} kcal`);
+  },
+  foodDel: el => {
+    const n = S.nutrition[ui.date]; const it = n && (n.items || []).find(i => i.id === el.dataset.id); if (!it) return;
+    n.items = n.items.filter(i => i !== it);
+    for (const k of MACROS) n[k] = Math.max(0, Math.round(num(n[k]) - num(it[k])));
+    commit(`Removed ${it.name}`);
   },
   clearNut: () => { delete S.nutrition[ui.date]; commit(); },
   editRoutine: () => { ui.editRoutine = !ui.editRoutine; render(); },
@@ -881,6 +1010,7 @@ const CHANGE = {
   mealKcal: el => { if (el.value === '') delete S.meals.kcal[el.dataset.k]; else S.meals.kcal[el.dataset.k] = num(el.value); commit(); },
   storeEvery: el => { S.groceries.schedule[el.dataset.store].everyWeeks = Math.max(1, num(el.value) || 1); commit(); },
   storeDow: el => { S.groceries.schedule[el.dataset.store].dow = +el.value; commit(); },
+  aiField: el => { const it = (ui.ai.pending || []).find(i => i.id === el.dataset.id); if (it) { it[el.dataset.k] = Math.max(0, Math.round(num(el.value))); render(); } },
   setting: el => { const k = el.dataset.k; S.settings[k] = ['unit', 'theme'].includes(k) ? el.value : num(el.value); commit(); },
   chartDays: el => { ui.chartDays = +el.value; render(); },
 };
@@ -896,13 +1026,18 @@ document.addEventListener('change', async ev => {
     try { const n = importMFP(await el.files[0].text()); commit(`Imported ${n} day(s) from MyFitnessPal`); } catch (e) { toast('Import failed: ' + e.message); }
     return;
   }
+  if (el.id === 'aiPhoto' && el.files[0]) { ui.ai.photo = el.files[0]; render(); return; }
   if (el.id === 'importFile' && el.files[0]) {
     try { const data = JSON.parse(await el.files[0].text()); if (!data.settings) throw new Error('not a Life Tracker backup'); S = migrate(data); commit('Backup restored'); } catch (e) { toast('Import failed: ' + e.message); }
     return;
   }
   if (el.dataset.act && CHANGE[el.dataset.act]) CHANGE[el.dataset.act](el);
 });
-document.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches('input[type=text], input[type=number]')) ev.target.blur(); });
+document.addEventListener('input', ev => { if (ev.target.id === 'aiText') ui.ai.text = ev.target.value; });
+document.addEventListener('keydown', ev => {
+  if (ev.target.id === 'aiText' && ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); aiEstimate(); return; }
+  if (ev.key === 'Enter' && ev.target.matches('input[type=text], input[type=number]')) ev.target.blur(); });
 
 render();
 cloudInit();
+aiInit();
