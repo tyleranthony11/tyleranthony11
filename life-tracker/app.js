@@ -32,8 +32,8 @@ const TABS = [
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
 const STREAK_DEFAULTS = { food: true, water: true, train: true, routines: true };
-const BUILD = 'v5';
-const DATA_VERSION = 3;
+const BUILD = 'v6';
+const DATA_VERSION = 4;
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -92,7 +92,7 @@ function defaults() {
     events: [], // extra sessions: {id, date, time, type, title, mins, done}
     routines: [
       r('morning', '09:05', 'Shower: shampoo + conditioner, face cleanser, SA Lotion on body'),
-      r('meds', '09:30', 'Felix combo gel: 2 pumps on a dry scalp, then SPF moisturizer on face'),
+      r('morning', '09:30', 'SPF moisturizer on face'),
       r('cleaning', '10:00', 'Garbage + recycling out', { days: [3] }),
       r('cleaning', '21:00', 'Dishes done or dishwasher running'),
       r('cleaning', '21:00', 'Wipe counters + stovetop'),
@@ -125,6 +125,7 @@ function defaults() {
       r('laundry', '21:00', 'Towels: wash, dry, fold', { days: [5], weeks: 'hockey' }),
       r('laundry', '13:00', 'Bedsheets: wash, dry, back on the bed', { days: [0], weeks: 'off' }),
       r('laundry', '21:00', 'Bedsheets: wash, dry, back on the bed', { days: [4], weeks: 'hockey' }),
+      r('meds', '22:00', 'Felix combo gel: 2 pumps on a dry scalp, let it dry before bed'),
       r('morning', '23:30', 'Night skin: cleanser + moisturizer'),
     ],
     supplies: [
@@ -177,6 +178,15 @@ function migrate(s) {
     s.supplies.forEach(x => { if (x.name === 'Minoxidil') x.name = 'Felix combo gel (refill)'; });
     s.supplies = s.supplies.filter((x, i, all) => all.findIndex(y => y.name === x.name) === i);
     s.version = 3;
+  }
+  if (s.version < 4) {
+    // gel moves to bedtime so the morning shower washes off the residue
+    const gel = (s.routines || []).find(r => /^Felix combo gel: 2 pumps on a dry scalp, then SPF/.test(r.name));
+    if (gel) { gel.cat = 'morning'; gel.name = 'SPF moisturizer on face'; }
+    if (!(s.routines || []).some(r => /^Felix combo gel/.test(r.name))) {
+      s.routines.push({ id: uid(), cat: 'meds', time: '22:00', name: 'Felix combo gel: 2 pumps on a dry scalp, let it dry before bed', days: [], weeks: 'all', monthly: false, streak: true });
+    }
+    s.version = 4;
   }
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
   s.settings = { ...d.settings, ...s.settings };
