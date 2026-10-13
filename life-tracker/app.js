@@ -32,7 +32,8 @@ const TABS = [
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
 const STREAK_DEFAULTS = { food: true, water: true, train: true, routines: true };
-const BUILD = 'v4';
+const BUILD = 'v5';
+const DATA_VERSION = 3;
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -61,7 +62,7 @@ function defaults() {
   const f = (name, qty, cal, protein, carbs, fat) => ({ name, qty, meal: 'Breakfast', cal, protein, carbs, fat });
   const out = 'Eating out: Subway footlong, or sushi + an extra roll (aim 800+ kcal)';
   return {
-    version: 2,
+    version: DATA_VERSION,
     settings: {
       unit: 'lb', calories: 3200, gameCalories: 3500, protein: 165, carbs: 430, fat: 90,
       waterTarget: 3500, bottleMl: 700, goalWeight: 170, weeklyGain: 0.75, theme: 'auto', wake: '09:00',
@@ -91,8 +92,7 @@ function defaults() {
     events: [], // extra sessions: {id, date, time, type, title, mins, done}
     routines: [
       r('morning', '09:05', 'Shower: shampoo + conditioner, face cleanser, SA Lotion on body'),
-      r('meds', '09:30', 'Minoxidil on a dry scalp, then SPF moisturizer on face'),
-      r('meds', '09:45', 'Finasteride'),
+      r('meds', '09:30', 'Felix combo gel: 2 pumps on a dry scalp, then SPF moisturizer on face'),
       r('cleaning', '10:00', 'Garbage + recycling out', { days: [3] }),
       r('cleaning', '21:00', 'Dishes done or dishwasher running'),
       r('cleaning', '21:00', 'Wipe counters + stovetop'),
@@ -125,7 +125,6 @@ function defaults() {
       r('laundry', '21:00', 'Towels: wash, dry, fold', { days: [5], weeks: 'hockey' }),
       r('laundry', '13:00', 'Bedsheets: wash, dry, back on the bed', { days: [0], weeks: 'off' }),
       r('laundry', '21:00', 'Bedsheets: wash, dry, back on the bed', { days: [4], weeks: 'hockey' }),
-      r('meds', '22:00', 'Minoxidil (2nd dose)'),
       r('morning', '23:30', 'Night skin: cleanser + moisturizer'),
     ],
     supplies: [
@@ -135,7 +134,7 @@ function defaults() {
       ...['Paper towels', 'Toilet paper', 'Dishwasher pods', 'Garbage bags', 'Disinfecting wipes'].map(n => sup(n, 'cleaning', 'Costco')),
       ...['Dish soap', 'All-purpose spray', 'Glass cleaner', 'Bathroom + shower cleaner', 'Toilet bowl cleaner', 'Sponges + scrub brushes', 'Floor cleaner (mop)', 'Mop head', 'Vacuum bags / filter'].map(n => sup(n, 'cleaning', 'Sobeys')),
       sup('Laundry detergent', 'laundry', 'Costco'), sup('Dryer sheets', 'laundry', 'Sobeys'), sup('Stain remover', 'laundry', 'Sobeys'),
-      ...['CeraVe cleanser', 'CeraVe moisturizer', 'CeraVe AM SPF moisturizer', 'CeraVe SA Lotion', 'Native shampoo', 'Native conditioner', 'Minoxidil', 'Finasteride refill'].map(n => sup(n, 'care', 'Other')),
+      ...['CeraVe cleanser', 'CeraVe moisturizer', 'CeraVe AM SPF moisturizer', 'CeraVe SA Lotion', 'Native shampoo', 'Native conditioner', 'Felix combo gel (refill)'].map(n => sup(n, 'care', 'Other')),
     ],
     groceries: { extras: [], last: { Sobeys: '', Costco: '', Other: '' }, costcoAnchor: '2026-10-12' },
     favorites: [{ id: uid(), name: 'My smoothie', items: [
@@ -170,6 +169,15 @@ function migrate(s) {
     delete s.tasks;
     s.created = d.created; s.version = 2;
   }
+  if (s.version < 3) {
+    // prescription is one topical gel (finasteride 0.25% + minoxidil 5%), 2 pumps once a day
+    s.routines = (s.routines || []).filter(r => r.name !== 'Finasteride' && r.name !== 'Minoxidil (2nd dose)');
+    s.routines.forEach(r => { if (/^Minoxidil on a dry scalp/.test(r.name)) r.name = 'Felix combo gel: 2 pumps on a dry scalp, then SPF moisturizer on face'; });
+    s.supplies = (s.supplies || []).filter(x => x.name !== 'Finasteride refill');
+    s.supplies.forEach(x => { if (x.name === 'Minoxidil') x.name = 'Felix combo gel (refill)'; });
+    s.supplies = s.supplies.filter((x, i, all) => all.findIndex(y => y.name === x.name) === i);
+    s.version = 3;
+  }
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
   s.settings = { ...d.settings, ...s.settings };
   s.settings.streakCats = { ...STREAK_DEFAULTS, ...(s.settings.streakCats || {}) };
@@ -184,7 +192,7 @@ function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const parsed = JSON.parse(raw); const old = (parsed.version || 1) < 2; const s = migrate(parsed);
+      const parsed = JSON.parse(raw); const old = (parsed.version || 1) < DATA_VERSION; const s = migrate(parsed);
       if (old) try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* storage blocked */ }
       return s;
     }
@@ -246,7 +254,7 @@ async function cloudPull(first) {
   if (snap.empty) { if (first) await cloudFlush(); return; }
   const docs = {}; cloud.saved = {};
   for (const d of snap.docs) { const body = d.data(); docs[d.id] = body.v; cloud.saved[d.id] = JSON.stringify(body); }
-  const old = !docs.meta || (docs.meta.version || 1) < 2;
+  const old = !docs.meta || (docs.meta.version || 1) < DATA_VERSION;
   S = fromSections(docs); saveLocal(); render(); setSync('synced');
   if (old) scheduleCloud(); // write the upgraded plan back to the cloud
 }
