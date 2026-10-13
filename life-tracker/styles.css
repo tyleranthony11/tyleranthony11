@@ -116,7 +116,7 @@ header.top {
 .bnav button.on { border-color: var(--accent); background: var(--accent-soft); }
 .bnav button.on .tl { color: var(--accent-ink); }
 .bnav .side-brand, .bnav .side-only { display: none; }
-@media (max-width: 380px) { .bnav .tl { display: none; } }
+@media (max-width: 460px) { .bnav .tl { display: none; } .bnav .ic { font-size: 26px; } .bnav button { padding: 6px 0; } }
 
 main { max-width: 1000px; margin: 0 auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
 
@@ -363,4 +363,93 @@ details summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
   .hero-flame { font-size: 50px; }
   .datenav .label { min-width: 0; }
   .grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- taps: no double-tap zoom delay on phones ---------- */
+button, [data-act], label, select, input[type=checkbox] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+button, [data-act], label.check, label.tl-row { cursor: pointer; }
+#errbar {
+  position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 90;
+  background: var(--bad); color: var(--on-color); font-weight: 800; font-size: 14px; padding: 10px 16px;
+}
+
+/* ---------- progress tiles ---------- */
+.ptiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.ptile { border: 2px solid var(--border); border-bottom-width: 4px; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ptile.done { border-color: var(--good); background: var(--good-soft); }
+.ptile-head { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.ptile-head b { flex: 1; font-weight: 900; }
+.ptile-icon { font-size: 20px; }
+.ptile-text { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ptile .qbar { height: 12px; margin-top: 2px; }
+.ptile.done .qbar > span { background: var(--good); }
+.tile-act { margin-top: 6px; align-self: flex-start; }
+.ptile .row.tile-act { gap: 4px; }
+
+/* ---------- timeline ---------- */
+.tl-card h2 .btn { margin-left: auto; }
+.tl-part { margin: 18px 0 4px !important; }
+.tl-part:first-of-type { margin-top: 4px !important; }
+.tl-row {
+  display: grid; grid-template-columns: 62px 34px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 9px 0; border-bottom: 2px solid var(--border);
+}
+.tl-time { font-size: 12px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-icon { font-size: 22px; text-align: center; }
+.tl-title { font-weight: 800; font-size: 15px; line-height: 1.3; }
+.tl-sub { font-size: 12px; color: var(--muted); }
+.tl-ctl { display: flex; justify-content: flex-end; }
+.tl-row.info .tl-title { color: var(--text-2); font-weight: 700; }
+.tl-row.done .tl-title { color: var(--muted); text-decoration: line-through; }
+.tl-row.late { background: var(--warn-soft); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.tl-row.late .tl-time { color: var(--warn); }
+.tl-check {
+  appearance: none; -webkit-appearance: none; width: 30px; height: 30px; margin: 0;
+  border: 2px solid var(--border); border-bottom-width: 4px; border-radius: 10px; background: var(--surface);
+  display: grid; place-items: center; cursor: pointer;
+}
+.tl-check:checked { background: var(--good); border-color: var(--good-dark); }
+.tl-check:checked::after { content: "✓"; color: var(--on-color); font-weight: 900; font-size: 17px; line-height: 1; }
+.tl-ok { color: var(--good-ink); font-weight: 900; font-size: 18px; padding: 0 6px; }
+.tl-now { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: var(--bad); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+.tl-now::before, .tl-now::after { content: ""; flex: 1; height: 2px; background: var(--bad); }
+
+/* ---------- segmented tabs & chips ---------- */
+.seg { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; scrollbar-width: none; }
+.seg::-webkit-scrollbar { display: none; }
+.seg button {
+  flex: 0 0 auto; border: 2px solid var(--border); border-bottom-width: 4px; background: var(--surface); border-radius: 12px;
+  padding: 7px 12px; font-weight: 900; font-size: 13px; color: var(--text-2); cursor: pointer; white-space: nowrap;
+}
+.seg button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chipbtn { border: 2px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 12px; font-weight: 800; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.chipbtn.on { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+
+/* ---------- supplies ---------- */
+.sup-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 2px solid var(--border); }
+.sup-row .name { flex: 1; min-width: 0; font-weight: 700; }
+.sup-row.low .name { color: var(--warn); }
+.store-pill { border: 0; cursor: pointer; }
+.btn.warnbtn { background: var(--flame); border-color: var(--flame-dark); color: var(--on-color); }
+.fav-row { padding: 8px 0; border-bottom: 2px solid var(--border); gap: 8px; }
+
+/* ---------- routines editor ---------- */
+.rt-item { padding: 12px 0; border-bottom: 2px solid var(--border); }
+.rt-item input[type=time] { width: 118px; }
+.rt-top { display: flex; gap: 6px; align-items: center; }
+.rt-top input { flex: 1; min-width: 0; font-weight: 800; }
+.days { display: flex; gap: 3px; }
+.day {
+  width: 32px; height: 32px; border-radius: 10px; border: 2px solid var(--border); background: var(--surface);
+  font-weight: 900; font-size: 12px; color: var(--muted); cursor: pointer; padding: 0;
+}
+.day.on { background: var(--accent); border-color: var(--accent-dark); color: var(--on-color); }
+.range-row { padding: 6px 0; border-bottom: 2px solid var(--border); }
+.plan-list { padding-left: 18px; margin: 0; display: grid; gap: 6px; }
+
+@media (max-width: 520px) {
+  .tl-row { grid-template-columns: 54px 28px minmax(0, 1fr) auto; gap: 6px; }
+  .tl-icon { font-size: 19px; }
+  .ptiles { grid-template-columns: 1fr 1fr; }
 }
