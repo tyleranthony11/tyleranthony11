@@ -32,8 +32,8 @@ const TABS = [
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
 const STREAK_DEFAULTS = { food: true, water: true, train: true, routines: true };
-const BUILD = 'v6';
-const DATA_VERSION = 4;
+const BUILD = 'v7';
+const DATA_VERSION = 5;
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -134,8 +134,9 @@ function defaults() {
       sup('PVL creatine', 'food', 'Other'),
       ...['Paper towels', 'Toilet paper', 'Dishwasher pods', 'Garbage bags', 'Disinfecting wipes'].map(n => sup(n, 'cleaning', 'Costco')),
       ...['Dish soap', 'All-purpose spray', 'Glass cleaner', 'Bathroom + shower cleaner', 'Toilet bowl cleaner', 'Sponges + scrub brushes', 'Floor cleaner (mop)', 'Mop head', 'Vacuum bags / filter'].map(n => sup(n, 'cleaning', 'Sobeys')),
+      sup('Kirkland minoxidil 5%', 'care', 'Costco'),
       sup('Laundry detergent', 'laundry', 'Costco'), sup('Dryer sheets', 'laundry', 'Sobeys'), sup('Stain remover', 'laundry', 'Sobeys'),
-      ...['CeraVe cleanser', 'CeraVe moisturizer', 'CeraVe AM SPF moisturizer', 'CeraVe SA Lotion', 'Native shampoo', 'Native conditioner', 'Felix combo gel (refill)'].map(n => sup(n, 'care', 'Other')),
+      ...['CeraVe cleanser', 'CeraVe moisturizer', 'CeraVe AM SPF moisturizer', 'CeraVe SA Lotion', 'Native shampoo', 'Native conditioner', 'Felix gel low: get a finasteride Rx + buy Kirkland minoxidil', 'Generic finasteride 1 mg (Rx)'].map(n => sup(n, 'care', 'Other')),
     ],
     groceries: { extras: [], last: { Sobeys: '', Costco: '', Other: '' }, costcoAnchor: '2026-10-12' },
     favorites: [{ id: uid(), name: 'My smoothie', items: [
@@ -187,6 +188,13 @@ function migrate(s) {
       s.routines.push({ id: uid(), cat: 'meds', time: '22:00', name: 'Felix combo gel: 2 pumps on a dry scalp, let it dry before bed', days: [], weeks: 'all', monthly: false, streak: true });
     }
     s.version = 4;
+  }
+  if (s.version < 5) {
+    // when the Felix gel runs out: generic finasteride pill + Kirkland minoxidil
+    s.supplies.forEach(x => { if (x.name === 'Felix combo gel (refill)') x.name = 'Felix gel low: get a finasteride Rx + buy Kirkland minoxidil'; });
+    const add = (name, store) => { if (!s.supplies.some(x => x.name === name)) s.supplies.push({ id: uid(), name, cat: 'care', store, status: 'ok', inCart: false }); };
+    add('Kirkland minoxidil 5%', 'Costco'); add('Generic finasteride 1 mg (Rx)', 'Other');
+    s.version = 5;
   }
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
   s.settings = { ...d.settings, ...s.settings };
