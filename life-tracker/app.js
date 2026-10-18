@@ -32,7 +32,7 @@ const TABS = [
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
 const STREAK_DEFAULTS = { food: true, water: true, train: true, routines: true };
-const BUILD = 'v7';
+const BUILD = 'v8';
 const DATA_VERSION = 5;
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
@@ -65,7 +65,7 @@ function defaults() {
     version: DATA_VERSION,
     settings: {
       unit: 'lb', calories: 3200, gameCalories: 3500, protein: 165, carbs: 430, fat: 90,
-      waterTarget: 3500, bottleMl: 700, goalWeight: 170, weeklyGain: 0.75, theme: 'auto', wake: '09:00',
+      waterTarget: 3500, bottleMl: 700, cardioCalories: 200, goalWeight: 170, weeklyGain: 0.75, theme: 'auto', wake: '09:00',
       streakCats: { ...STREAK_DEFAULTS },
     },
     hockey: { ranges: [{ start: '2026-11-07', end: '2026-12-05' }, { start: '2027-01-09', end: '2027-01-31' }], preseasonEnd: '2026-11-06' },
@@ -306,7 +306,7 @@ function isHockeyDay(d) {
 }
 // A week (Mon–Sun) is a hockey week when its weekend has games
 function isHockeyWeek(d) { const mon = startOfWeek(d); return isHockeyDay(addDays(mon, 5)) || isHockeyDay(addDays(mon, 6)); }
-const calTarget = d => (isHockeyDay(d) ? S.settings.gameCalories : S.settings.calories);
+const calTarget = d => (isHockeyDay(d) ? S.settings.gameCalories : S.settings.calories + ((cardioFor(d) || {}).hard ? (S.settings.cardioCalories || 0) : 0));
 function costcoWeek(d) {
   const w = Math.round(diffDays(startOfWeek(d), startOfWeek(S.groceries.costcoAnchor)) / 7);
   return ((w % 2) + 2) % 2 === 0;
@@ -318,14 +318,29 @@ function routineApplies(r, d) {
   if (r.monthly && parseISO(d).getDate() > 7) return false;
   return true;
 }
+// Conditioning: 3-week pre-season block before the first game, then a lighter in-season week
+const PRE_START = '2026-10-19';
 function cardioFor(d) {
   if (d < S.created || isHockeyDay(d)) return null;
-  const dw = dowOf(d), pre = d <= S.hockey.preseasonEnd, wk = Math.max(0, Math.floor(diffDays(d, S.created) / 7));
-  if (dw === 2) { const n = Math.min(6 + wk, 12); return { time: '19:50', title: 'Bike intervals', sub: `Right after lifting: ${n} × 30 s hard / 90 s easy (about ${n * 2 + 4} min)` }; }
-  if (dw === 5 && pre) return { time: '19:50', title: 'Easy cardio', sub: `${Math.min(20 + wk * 2, 30)} min at a pace where you can still talk` };
-  if (dw === 6 && !pre && !isHockeyWeek(d)) return { time: '12:00', title: 'Easy cardio', sub: '25 min bike, jog or skate (no games this weekend)' };
+  const dw = dowOf(d), pre = d >= PRE_START && d <= S.hockey.preseasonEnd, hw = isHockeyWeek(d);
+  const wk = Math.floor(diffDays(d, PRE_START) / 7); // 0, 1, 2 during pre-season
+  const bike = (rounds, on, off) => ({ time: '19:50', title: 'Bike shift intervals', sub: `5 min warm-up, ${rounds} × ${on} s hard / ${off} s easy, 3 min cool-down`, hard: true });
+  if (pre) {
+    if (dw === 2) return [bike(6, 30, 90), bike(8, 40, 80), bike(6, 40, 80)][wk];
+    if (dw === 5) return wk < 2
+      ? { time: '19:50', title: 'Easy cardio', sub: `${wk ? 30 : 25} min on the bike at a pace where you can still talk`, hard: true }
+      : { time: '19:50', title: 'Loosen up', sub: 'No cardio: 10 min easy spin + hip and groin stretching. Game tomorrow!', hard: false };
+    if (dw === 6) return { time: '12:00', title: 'Speed + agility (or a skate)', sub: wk ? '8 × 20 m sprints, 6 shuttle runs, 3 × 8 skater jumps per side (~25 min)' : '6 × 20 m sprints, 4 shuttle runs each way, 3 × 6 skater jumps per side (~20 min)', hard: true };
+    return null;
+  }
+  if (d < PRE_START) return dw === 2 ? bike(6, 30, 90) : null;
+  if (dw === 2) return bike(8, 30, 90);
+  if (dw === 1 && hw) return { time: '19:50', title: 'Recovery spin', sub: '15 min very easy to flush out the weekend', hard: false };
+  if (dw === 6 && !hw) return { time: '12:00', title: 'Easy cardio or a skate', sub: '30 min, no games this weekend', hard: true };
   return null;
 }
+const coreFor = d => (!isHockeyDay(d) && d >= PRE_START && (dowOf(d) === 1 || dowOf(d) === 4))
+  ? { time: '20:05', title: 'Core (8 min)', sub: '3 rounds: plank 40 s, dead bugs 10 per side, side plank 30 s per side' } : null;
 // Sobeys weekly, Costco every other week; both move to weeknights in hockey weeks
 function tripsOn(d) {
   const dw = dowOf(d), hw = isHockeyWeek(d), out = [];
@@ -357,14 +372,19 @@ function dayPlan(d) {
     rows.push({ key: 'meal-' + slot, time, icon, title, slot, kind: 'meal', done: logged.length > 0,
       sub: logged.length ? `${sum(logged.map(i => num(i.cal)))} kcal logged` : mealPlanFor(d, slot) });
   }
-  if (hd) rows.push({ key: 'hockey', time: '10:00', icon: '🏒', title: 'Hockey', sub: `Game day: eat big (${calTarget(d).toLocaleString()} kcal) and drink extra water`, kind: 'check', cat: 'train', done: isDone(d, 'hockey'), streak: true });
+  if (hd) rows.push({ key: 'hockey', time: '10:00', icon: '🏒', title: 'Hockey', sub: `Game day: ${calTarget(d).toLocaleString()} kcal, +2 shakers. Big meal 3 h before ice, only sips in the last hour`, kind: 'check', cat: 'train', done: isDone(d, 'hockey'), streak: true });
   const gd = hd ? null : gymDayFor(d);
   if (gd) {
     const day = splitById(gd);
-    rows.push({ key: 'gym', time: '18:45', icon: '🏋️', title: `${day ? day.name : 'Workout'} day`, sub: day ? day.exercises.map(e => e.name).slice(0, 3).join(', ') + '…' : '', kind: 'gym', cat: 'train', dayId: gd, done: liftedOn(d), streak: true });
+    const firstGameWeek = d > addDays(S.hockey.preseasonEnd, -7) && d <= S.hockey.preseasonEnd;
+    const legsNote = gd !== 'legs' ? '' : firstGameWeek ? 'Lighter before your first game: 2 sets each, stop 2 reps short' : isHockeyWeek(d) ? 'Games this weekend: stop 1–2 reps short on every set' : '';
+    const gymSub = legsNote || (day ? day.exercises.map(e => e.name).slice(0, 3).join(', ') + '…' : '');
+    rows.push({ key: 'gym', time: '18:45', icon: '🏋️', title: `${day ? day.name : 'Workout'} day`, sub: gymSub, kind: 'gym', cat: 'train', dayId: gd, done: liftedOn(d), streak: true });
   }
   const c = cardioFor(d);
-  if (c) rows.push({ key: 'cardio', time: c.time, icon: '🚴', title: c.title, sub: c.sub, kind: 'check', cat: 'train', done: isDone(d, 'cardio'), streak: true });
+  if (c) rows.push({ key: 'cardio', time: c.time, icon: c.title.startsWith('Speed') ? '⚡' : '🚴', title: c.title, sub: c.hard ? `${c.sub} · eat +${S.settings.cardioCalories} kcal, +1 shaker` : c.sub, kind: 'check', cat: 'train', done: isDone(d, 'cardio'), streak: true });
+  const core = coreFor(d);
+  if (core) rows.push({ key: 'core', time: core.time, icon: '🧱', title: core.title, sub: core.sub, kind: 'check', cat: 'train', done: isDone(d, 'core'), streak: true });
   for (const t of tripsOn(d)) {
     rows.push({ key: 'shop-' + t.store, time: t.time, icon: '🛒', title: `${t.store} run`, kind: 'shop', store: t.store, done: S.groceries.last[t.store] === d || isDone(d, 'shop-' + t.store), streak: false });
   }
@@ -870,13 +890,21 @@ const VIEWS = {
           <button class="btn primary" data-act="rangeAdd">Add</button></div></div>
       <div class="card"><h2>📅 Next hockey weekends</h2>
         ${weekends.map(sat => `<div class="row between small" style="padding:4px 0"><span>Sat ${fmtDate(sat, { month: 'short', day: 'numeric' })} + Sun ${fmtDate(addDays(sat, 1), { month: 'short', day: 'numeric' })}</span><span class="pill warn">Games</span></div>`).join('') || '<p class="muted">None coming up.</p>'}</div>
-      <div class="card"><h2>🚴 Cardio plan</h2>
+      <div class="card"><h2>🚴 Conditioning plan</h2>
+        <h3>Pre-season (Oct 19 – Nov 6)</h3>
         <ul class="small plan-list">
-          <li><b>Until ${fmtDate(S.hockey.preseasonEnd, { month: 'short', day: 'numeric' })} (getting ready):</b> bike intervals after Tuesday's lift (30 s hard / 90 s easy, one more round each week) and easy cardio after Friday's lift.</li>
-          <li><b>Hockey weeks:</b> games are your cardio. Keep just the Tuesday intervals.</li>
-          <li><b>Weekends without games:</b> 25 min easy cardio on Saturday.</li>
+          <li><b>Tue:</b> bike shift intervals after Pull. Week 1: 6 × 30 s · week 2: 8 × 40 s · week 3: 6 × 40 s</li>
+          <li><b>Fri:</b> easy bike 25 → 30 min. Week 3: just loosen up and stretch</li>
+          <li><b>Sat:</b> sprints + agility, or a skate if you get ice</li>
+          <li><b>Mon + Thu:</b> 8 min core after lifting, which also helps stop stitches</li>
         </ul>
-        <p class="muted small">Short cardio won't slow your gains at 3,200 kcal a day.</p></div>
+        <h3>In-season</h3>
+        <ul class="small plan-list">
+          <li><b>Mon:</b> 15 min recovery spin · <b>Tue:</b> 8 × 30 s intervals · <b>Fri:</b> rest</li>
+          <li><b>Wed legs:</b> stop 1–2 reps short so you're fresh for Saturday</li>
+          <li><b>Weekends without games:</b> 30 min easy or a skate</li>
+        </ul>
+        <p class="muted small">Cardio days get +${S.settings.cardioCalories} kcal so you keep gaining. To avoid stitches: big meal 3 h before ice, only sips in the last hour, deep belly breaths on the bench.</p></div>
       <div class="card"><h2>This week</h2>
         ${week.map(x => { const tr = dayPlan(x).filter(r => r.cat === 'train');
           return `<div class="row between small" style="padding:5px 0;border-bottom:2px solid var(--border)"><b style="width:44px">${DOW[dowOf(x)]}</b><span style="flex:1">${tr.map(r => `${r.icon} ${esc(r.title)}${r.done ? ' ✓' : ''}`).join(' · ') || '<span class="muted">Rest</span>'}</span></div>`; }).join('')}</div>
@@ -980,7 +1008,7 @@ const VIEWS = {
     return `<div class="grid">
       <div class="card"><h2>🎯 Daily targets</h2>
         <div class="row">${f('calories', 'Calories')}${f('gameCalories', 'Game day kcal')}${f('protein', 'Protein g')}${f('carbs', 'Carbs g')}${f('fat', 'Fat g')}</div>
-        <div class="row" style="margin-top:8px">${f('waterTarget', 'Water ml', 100)}${f('bottleMl', 'Shaker ml', 10)}</div>
+        <div class="row" style="margin-top:8px">${f('waterTarget', 'Water ml', 100)}${f('bottleMl', 'Shaker ml', 10)}${f('cardioCalories', 'Cardio day +kcal', 50)}</div>
         <div class="row" style="margin-top:8px">${f('goalWeight', 'Goal weight', 0.5)}${f('weeklyGain', 'Gain / week', 0.05)}
           <label class="field">Wake up<input type="time" data-act="setting" data-k="wake" value="${s.wake}"></label></div>
         <button class="btn sm" style="margin-top:10px" data-act="macroCalc">Fill carbs + fat from calories</button></div>
