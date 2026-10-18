@@ -32,7 +32,7 @@ const TABS = [
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
 const STREAK_DEFAULTS = { food: true, water: true, train: true, routines: true };
-const BUILD = 'v8';
+const BUILD = 'v9';
 const DATA_VERSION = 5;
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
@@ -330,7 +330,7 @@ function cardioFor(d) {
     if (dw === 5) return wk < 2
       ? { time: '19:50', title: 'Easy cardio', sub: `${wk ? 30 : 25} min on the bike at a pace where you can still talk`, hard: true }
       : { time: '19:50', title: 'Loosen up', sub: 'No cardio: 10 min easy spin + hip and groin stretching. Game tomorrow!', hard: false };
-    if (dw === 6) return { time: '12:00', title: 'Speed + agility (or a skate)', sub: wk ? '8 × 20 m sprints, 6 shuttle runs, 3 × 8 skater jumps per side (~25 min)' : '6 × 20 m sprints, 4 shuttle runs each way, 3 × 6 skater jumps per side (~20 min)', hard: true };
+    if (dw === 6) return { time: '12:00', title: 'Skate', sub: `Public skate or stick & puck. No ice? ${wk ? '8 × 20 m sprints, 6 shuttle runs, 3 × 8 skater jumps per side' : '6 × 20 m sprints, 4 shuttle runs each way, 3 × 6 skater jumps per side'}`, hard: true };
     return null;
   }
   if (d < PRE_START) return dw === 2 ? bike(6, 30, 90) : null;
@@ -382,7 +382,7 @@ function dayPlan(d) {
     rows.push({ key: 'gym', time: '18:45', icon: '🏋️', title: `${day ? day.name : 'Workout'} day`, sub: gymSub, kind: 'gym', cat: 'train', dayId: gd, done: liftedOn(d), streak: true });
   }
   const c = cardioFor(d);
-  if (c) rows.push({ key: 'cardio', time: c.time, icon: c.title.startsWith('Speed') ? '⚡' : '🚴', title: c.title, sub: c.hard ? `${c.sub} · eat +${S.settings.cardioCalories} kcal, +1 shaker` : c.sub, kind: 'check', cat: 'train', done: isDone(d, 'cardio'), streak: true });
+  if (c) rows.push({ key: 'cardio', time: c.time, icon: c.title === 'Skate' ? '⛸️' : '🚴', title: c.title, sub: c.hard ? `${c.sub} · eat +${S.settings.cardioCalories} kcal, +1 shaker` : c.sub, kind: 'check', cat: 'train', done: isDone(d, 'cardio'), streak: true });
   const core = coreFor(d);
   if (core) rows.push({ key: 'core', time: core.time, icon: '🧱', title: core.title, sub: core.sub, kind: 'check', cat: 'train', done: isDone(d, 'core'), streak: true });
   for (const t of tripsOn(d)) {
@@ -895,7 +895,7 @@ const VIEWS = {
         <ul class="small plan-list">
           <li><b>Tue:</b> bike shift intervals after Pull. Week 1: 6 × 30 s · week 2: 8 × 40 s · week 3: 6 × 40 s</li>
           <li><b>Fri:</b> easy bike 25 → 30 min. Week 3: just loosen up and stretch</li>
-          <li><b>Sat:</b> sprints + agility, or a skate if you get ice</li>
+          <li><b>Sat:</b> skate (public skate or stick & puck). No ice? Sprints + agility</li>
           <li><b>Mon + Thu:</b> 8 min core after lifting, which also helps stop stitches</li>
         </ul>
         <h3>In-season</h3>
