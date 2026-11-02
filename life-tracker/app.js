@@ -6,7 +6,7 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MEAL_SLOTS = ['Breakfast', 'Lunch', 'Pre-gym', 'Dinner', 'Bedtime'];
 const MEAL_INFO = { // slot -> [time, icon, timeline title]
-  Breakfast: ['09:35', '🥤', 'Smoothie'], Lunch: ['13:30', '🍱', 'Lunch'], 'Pre-gym': ['17:00', '🍌', 'Pre-gym snack'],
+  Breakfast: ['09:35', '🍳', 'Breakfast'], Lunch: ['13:30', '🍱', 'Lunch'], 'Pre-gym': ['17:00', '🍌', 'Pre-gym snack'],
   Dinner: ['20:15', '🍽️', 'Dinner'], Bedtime: ['23:00', '🍨', 'Bedtime snack'],
 };
 const STORES = ['Sobeys', 'Costco', 'Other'];
@@ -33,10 +33,10 @@ const TABS = [
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
 const STREAK_DEFAULTS = { food: true, water: true, train: true, habits: true, routines: true };
-const BUILD = 'v10';
+const BUILD = 'v11';
 // Daily habits: some to build, some to break. Each one gets its own day counter.
 const HABIT_DEFAULTS = [
-  { time: '09:35', name: 'Vitamin D3 with the smoothie', opts: { habit: 'build', icon: '☀️' } },
+  { time: '09:35', name: 'Vitamin D3 with breakfast', opts: { habit: 'build', icon: '☀️' } },
   { time: '13:15', name: '10 min outside in daylight', opts: { habit: 'build', icon: '🌤️' } },
   { time: '23:45', name: 'Phone away, wind down', opts: { habit: 'build', icon: '📵' } },
   { time: '23:55', name: 'No weed today', opts: { habit: 'break', icon: '🚭' } },
@@ -47,7 +47,7 @@ const DINNERS = {
   4: 'Ground beef stir-fry + frozen veg + rice', 5: 'Burgers + sweet potato fries + salad', 6: 'Game day: chicken pasta',
   0: 'Roast chicken, potatoes & veg (cook extra for lunches)',
 };
-const DATA_VERSION = 6;
+const DATA_VERSION = 7;
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -160,13 +160,13 @@ function defaults() {
       f('PVL creatine', '5 g', 0, 0, 0, 0), f('Central Dairies low-fat milk', '½ cup', 55, 4, 6, 1), f('Oikos Greek yogurt', '1 container', 100, 15, 7, 0)] }],
     meals: {
       plan: {
-        1: ['My smoothie', out, 'Bagel + PB', 'Ground beef pasta + garlic bread', 'PB toast ×2 + big glass of milk'],
-        2: ['My smoothie', out, 'Greek yogurt + granola + banana', 'Chicken, rice & veg', 'Greek yogurt + granola + PB'],
-        3: ['My smoothie', out, 'Bagel + PB', 'Steak or salmon, potatoes & veg', 'PB toast ×2 + big glass of milk'],
-        4: ['My smoothie', out, 'Greek yogurt + granola + banana', 'Turkey chili + rice', 'Greek yogurt + granola + PB'],
-        5: ['My smoothie', out, 'Bagel + PB', 'Homemade burgers + fries', 'PB toast ×2 + big glass of milk'],
-        6: ['My smoothie', 'Leftovers or a sandwich + fruit', 'Bagel + PB', 'Chicken pasta', 'Greek yogurt + granola + PB'],
-        0: ['My smoothie', 'Leftovers or a sandwich + fruit', 'Bagel + PB', 'Roast chicken, potatoes & veg (+ meal prep)', 'PB toast ×2 + big glass of milk'],
+        1: ['Smoothie or eggs + toast', out, 'Bagel + PB', 'Ground beef pasta + garlic bread', 'PB toast ×2 + big glass of milk'],
+        2: ['Smoothie or eggs + toast', out, 'Greek yogurt + granola + banana', 'Chicken, rice & veg', 'Greek yogurt + granola + PB'],
+        3: ['Smoothie or eggs + toast', out, 'Bagel + PB', 'Steak or salmon, potatoes & veg', 'PB toast ×2 + big glass of milk'],
+        4: ['Smoothie or eggs + toast', out, 'Greek yogurt + granola + banana', 'Turkey chili + rice', 'Greek yogurt + granola + PB'],
+        5: ['Smoothie or eggs + toast', out, 'Bagel + PB', 'Homemade burgers + fries', 'PB toast ×2 + big glass of milk'],
+        6: ['Smoothie or eggs + toast', 'Leftovers or a sandwich + fruit', 'Bagel + PB', 'Chicken pasta', 'Greek yogurt + granola + PB'],
+        0: ['Smoothie or eggs + toast', 'Leftovers or a sandwich + fruit', 'Bagel + PB', 'Roast chicken, potatoes & veg (+ meal prep)', 'PB toast ×2 + big glass of milk'],
       },
       kcal: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].flatMap(d => [[`${d}|Breakfast`, 605], [`${d}|Lunch`, 800], [`${d}|Pre-gym`, 350], [`${d}|Dinner`, 900], [`${d}|Bedtime`, 550]])),
     },
@@ -231,6 +231,12 @@ function migrate(s) {
     if (!s.supplies.some(x => /Vitamin D3/.test(x.name))) s.supplies.push({ id: uid(), name: 'Vitamin D3 1,000 IU', cat: 'care', store: 'Costco', status: 'low', inCart: false });
     if (s.meals && s.meals.plan) applyDinners(s.meals);
     s.version = 6;
+  }
+  if (s.version < 7) {
+    // breakfast varies, so the plan suggests instead of assuming the smoothie
+    for (const p of Object.values((s.meals && s.meals.plan) || {})) if (p[0] === 'My smoothie') p[0] = 'Smoothie or eggs + toast';
+    (s.routines || []).forEach(x => { if (x.name === 'Vitamin D3 with the smoothie') x.name = 'Vitamin D3 with breakfast'; });
+    s.version = 7;
   }
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
   s.settings = { ...d.settings, ...s.settings };
@@ -547,8 +553,7 @@ function timelineRow(r, isToday, nowT) {
   let ctl = '';
   if (r.done && r.kind !== 'info') ctl = '<span class="tl-ok">✓</span>';
   else if (r.kind === 'meal') {
-    const fav = r.slot === 'Breakfast' && S.favorites[0];
-    ctl = fav ? `<button class="btn primary sm" data-act="fav" data-id="${fav.id}" data-meal="Breakfast">Log</button>` : `<button class="btn sm" data-act="logMeal" data-meal="${r.slot}">Log</button>`;
+    ctl = `<button class="btn sm" data-act="logMeal" data-meal="${r.slot}">Log</button>`;
   } else if (r.kind === 'gym') ctl = `<button class="btn primary sm" data-act="go" data-go="gym" data-day="${r.dayId}">Start</button>`;
   else if (r.kind === 'shop') ctl = '<button class="btn sm" data-act="go" data-go="meals">List</button>';
   return `<div class="${cls}">${body}<div class="tl-ctl">${ctl}</div></div>`;
@@ -586,8 +591,7 @@ function upNext(plan, d) {
   let action;
   if (r.kind === 'check') action = `<button class="btn primary big-btn" data-act="chkOn" data-key="${r.key}">✓ Done</button>`;
   else if (r.kind === 'meal') {
-    const fav = r.slot === 'Breakfast' && S.favorites[0];
-    action = fav ? `<button class="btn primary big-btn" data-act="fav" data-id="${fav.id}" data-meal="Breakfast">✓ Log smoothie</button>` : `<button class="btn primary big-btn" data-act="logMeal" data-meal="${r.slot}">Log ${esc(r.title.toLowerCase())}</button>`;
+    action = `<button class="btn primary big-btn" data-act="logMeal" data-meal="${r.slot}">Log ${esc(r.title.toLowerCase())}</button>`;
   } else if (r.kind === 'gym') action = `<button class="btn primary big-btn" data-act="go" data-go="gym" data-day="${r.dayId}">Start workout</button>`;
   else action = '<button class="btn primary big-btn" data-act="go" data-go="meals">Open list</button>';
   return `<section class="card wide upnext ${late ? 'late' : ''}">
@@ -821,7 +825,8 @@ function aiCard() {
   const a = ui.ai; const p = a.pending;
   const tot = p ? Object.fromEntries(MACROS.map(k => [k, sum(p.map(i => num(i[k])))])) : null;
   return `<div class="card ai-card"><h2>✨ Log food with AI <span class="muted small">${ui.date === todayISO() ? 'today' : fmtDate(ui.date)}</span></h2>
-    ${a.meal ? `<div class="row" style="margin-bottom:8px"><span class="pill accent">Logging: ${esc(MEAL_INFO[a.meal] ? MEAL_INFO[a.meal][2] : a.meal)}</span><button class="btn ghost sm" data-act="aiMealClear">Any meal</button></div>` : ''}
+    ${a.meal ? `<div class="row" style="margin-bottom:8px"><span class="pill accent">Logging: ${esc(MEAL_INFO[a.meal] ? MEAL_INFO[a.meal][2] : a.meal)}</span><button class="btn ghost sm" data-act="aiMealClear">Any meal</button></div>
+      ${S.favorites.length ? `<div class="row" style="margin-bottom:8px">${S.favorites.map(fv => `<button class="btn sm" data-act="fav" data-id="${fv.id}" data-meal="${a.meal}">⭐ ${esc(fv.name)}</button>`).join('')}</div><p class="muted small" style="margin-top:0">Or describe what you had:</p>` : ''}` : ''}
     ${p ? `<p class="small">Check the estimate, fix any numbers, then add it.</p>
       <div class="ai-items">
         ${p.map(i => `<div class="ai-item">
@@ -1334,7 +1339,9 @@ const CLICK = {
     commit(`Saved “${name}” to favourites`);
   },
   logMeal: el => {
-    ui.ai.meal = el.dataset.meal; ui.ai.pending = null; render();
+    ui.ai.meal = el.dataset.meal; ui.ai.pending = null;
+    if (!ui.ai.available) { ui.tab = 'food'; render(); window.scrollTo(0, 0); return; }
+    render();
     const t = $('#aiText'); if (t) { t.scrollIntoView({ block: 'center' }); t.focus(); }
   },
   aiMealClear: () => { ui.ai.meal = ''; render(); },
