@@ -33,7 +33,7 @@ const TABS = [
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
 const STREAK_DEFAULTS = { food: true, water: true, train: true, habits: true, routines: true };
-const BUILD = 'v11';
+const BUILD = 'v12';
 // Daily habits: some to build, some to break. Each one gets its own day counter.
 const HABIT_DEFAULTS = [
   { time: '09:35', name: 'Vitamin D3 with breakfast', opts: { habit: 'build', icon: '☀️' } },
@@ -638,6 +638,31 @@ function daysStack(st) {
     <div class="dstack">${cells}</div>
     <p class="muted small">Every full square is a completed day. Stack them up: that's how you hit 170 lb and get game-ready.</p></section>`;
 }
+function ring(done, total) {
+  const pct = total ? done / total : 0, R = 26, C = 2 * Math.PI * R;
+  return `<div class="cl-ring" role="img" aria-label="${done} of ${total} done"><svg viewBox="0 0 64 64" width="64" height="64">
+    <circle cx="32" cy="32" r="${R}" class="ring-bg"/><circle cx="32" cy="32" r="${R}" class="ring-fg" stroke-dasharray="${(C * pct).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 32 32)"/></svg>
+    <span>${done}<small>/${total}</small></span></div>`;
+}
+function chainRow(st) {
+  const today = todayISO();
+  return `<div class="cl-chain" aria-label="Last 14 days">${Array.from({ length: 14 }, (_, i) => {
+    const d = addDays(today, i - 13);
+    const cls = d < S.created ? 'none' : st.info(d).complete ? 'full' : d === today ? 'today' : 'miss';
+    return `<i class="${cls}" title="${fmtDate(d)}"></i>`;
+  }).join('')}</div>`;
+}
+function clRow(r, late, next) {
+  const meta = `<span class="cl-meta ${late ? 'late' : ''}">${next ? '<b>Next</b> · ' : ''}${fmtTime(r.time)}</span>`;
+  let note = r.sub || '';
+  if (r.cat === 'habits') { const n = habitStreak(r.key); if (n) note = r.habit === 'break' ? `${n} day${n === 1 ? '' : 's'} clean` : `${n}-day streak`; }
+  if (r.kind === 'shop' && !r.done) note = `${groceryList(r.store).length} on the list`;
+  const main = `<span class="cl-main"><span class="cl-title">${r.icon ? `<span class="cl-ic">${r.icon}</span>` : ''}${esc(r.title)}</span>${note ? `<span class="cl-note">${esc(note)}</span>` : ''}</span>`;
+  const cls = `cl-row ${r.done ? 'done' : ''} ${next ? 'next' : ''}`;
+  if (r.kind === 'check') return `<label class="${cls}"><input type="checkbox" class="cl-check" data-act="chk" data-key="${r.key}" ${r.done ? 'checked' : ''} aria-label="${esc(r.title)}">${main}${meta}</label>`;
+  const act = r.kind === 'meal' ? `data-act="logMeal" data-meal="${r.slot}"` : r.kind === 'gym' ? `data-act="go" data-go="gym" data-day="${r.dayId}"` : 'data-act="go" data-go="meals"';
+  return `<button class="${cls} cl-btn" ${act}><span class="cl-circle">${r.done ? '✓' : ''}</span>${main}${meta}</button>`;
+}
 function celebrate(n) {
   const el = document.createElement('div'); el.className = 'celebrate'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Day complete');
   el.innerHTML = `<div class="cel-inner"><div class="cel-flame">🔥</div><div class="cel-num">${n}</div>
@@ -863,41 +888,47 @@ function foodLogCard() {
 
 const VIEWS = {
   today() {
-    const d = ui.date, isToday = d === todayISO();
-    const st = ui.stats; const di = (d >= S.created && d <= todayISO()) ? st.info(d) : dayInfo(d);
-    const left = di.reqCount - di.doneCount;
-    const msg = isToday
-      ? (di.complete ? 'Streak extended! See you tomorrow.' : st.streak > 0 ? `${left} left to keep your ${st.streak}-day streak.` : 'Finish today\'s plan to start a streak.')
-      : (di.complete ? 'Day complete.' : `${di.doneCount} of ${di.reqCount} done.`);
-    const hw = isHockeyWeek(d);
-    const w = S.weights.find(x => x.date === d);
-    return `<div class="grid">
-      <section class="card wide hero ${di.complete ? 'complete' : ''}">
-        <div class="hero-top">
-          <div class="hero-flame ${st.todayDone ? 'lit' : ''}">🔥</div>
-          <div class="hero-text"><div class="hero-num">${st.streak}</div><div class="hero-label">day streak</div></div>
-          <div class="hero-side"><div><b>${st.best}</b><span>best</span></div><div><b>${st.totalXp.toLocaleString()}</b><span>total XP</span></div></div>
-        </div>
-        <p class="hero-msg">${esc(msg)}</p>
-        ${weekStrip(st)}
-      </section>
-      ${upNext(di.plan, d)}
-      <section class="card wide">
-        <h2>${isToday ? 'Today' : fmtDate(d, { weekday: 'long', month: 'short', day: 'numeric' })} <span class="pill ${hw ? 'warn' : 'accent'}">${hw ? '🏒 Hockey week' : 'Normal week'}</span></h2>
-        <div class="ptiles">${di.groups.map(g => progressTile(g, d)).join('')}</div>
-      </section>
-      <section class="card wide tl-card">
-        <h2>Your schedule <button class="btn ghost sm" data-act="tab" data-tab="routines">Edit</button></h2>
-        ${timeline(d, di.plan)}
-      </section>
-      ${habitsCard()}
-      ${daysStack(st)}
-      ${aiCard()}
-      ${macroCard(true)}
-      <div class="card"><h2>⚖️ Weigh-in <span class="pill">Bonus</span></h2>
-        <div class="row"><input type="number" step="0.1" inputmode="decimal" id="todayWeight" placeholder="${U()}" value="${w ? w.value : ''}">
-          <button class="btn primary" data-act="logWeight" data-src="todayWeight">Save</button></div>
-        <p class="muted small">Weigh in after you wake up, before the smoothie. The 7-day average is what matters.</p></div>
+    const d = ui.date, isToday = d === todayISO(), st = ui.stats;
+    const di = (d >= S.created && d <= todayISO()) ? st.info(d) : dayInfo(d);
+    const s = S.settings, n = nut(d), ct = calTarget(d), water = S.water[d] || 0;
+    const foodOk = n.cal >= ct * 0.9 && n.protein >= s.protein * 0.9, waterOk = water >= s.waterTarget;
+    const items = di.plan.filter(r => r.kind !== 'info');
+    const total = items.length + 2, doneN = items.filter(r => r.done).length + (foodOk ? 1 : 0) + (waterOk ? 1 : 0);
+    const now = new Date(); const nowT = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const open = items.filter(r => !r.done), done = items.filter(r => r.done);
+    const nextKey = open.length ? open[0].key : null;
+    const left = total - doneN;
+    const status = di.complete
+      ? `<div class="cl-banner">🔥 Day complete${st.streak > 1 ? ` · ${st.streak} days in a row` : ''}</div>`
+      : `<div class="cl-status">🔥 <b>${st.streak}</b>-day streak${isToday ? ` · ${left} to go today` : ''}</div>`;
+    const sections = [['Morning', '00:00'], ['Afternoon', '12:00'], ['Evening', '17:00'], ['Night', '21:30']].map(([label, from], i, arr) => {
+      const to = arr[i + 1] ? arr[i + 1][1] : '99:99';
+      const rows = open.filter(r => r.time >= from && r.time < to);
+      return rows.length ? `<h3 class="cl-sec">${label}</h3>${rows.map(r => clRow(r, isToday && r.time < nowT, r.key === nextKey)).join('')}` : '';
+    }).join('');
+    return `<div class="cl">
+      <header class="cl-head">
+        <div><div class="cl-date">${isToday ? 'Today' : fmtDate(d, { weekday: 'long' })}</div>
+          <div class="cl-sub">${fmtDate(d, { weekday: isToday ? 'long' : undefined, month: 'long', day: 'numeric' })}${isHockeyWeek(d) ? ' · 🏒 Hockey week' : ''}</div></div>
+        ${ring(doneN, total)}
+      </header>
+      ${status}
+      ${chainRow(st)}
+      <h3 class="cl-sec">Daily goals</h3>
+      <button class="cl-row cl-btn ${foodOk ? 'done' : ''}" data-act="go" data-go="food">
+        <span class="cl-circle">${foodOk ? '✓' : ''}</span>
+        <span class="cl-main"><span class="cl-title">Eat ${ct.toLocaleString()} kcal · ${s.protein} g protein</span>
+          <span class="cl-note">${round(n.cal, 0).toLocaleString()} kcal · ${round(n.protein, 0)} g so far</span></span>
+        <span class="cl-meta">Log ›</span></button>
+      <div class="cl-row ${waterOk ? 'done' : ''}">
+        <span class="cl-circle">${waterOk ? '✓' : ''}</span>
+        <span class="cl-main"><span class="cl-title">Drink ${bottles(s.waterTarget)} shakers of water</span>
+          <span class="cl-note">${bottles(water)} so far</span></span>
+        <button class="btn sm" data-act="water" data-n="${s.bottleMl}">+1</button></div>
+      ${sections || (open.length ? '' : '<p class="cl-empty">Everything on today\'s list is checked off. 🎉</p>')}
+      ${done.length ? `<button class="cl-done-toggle" data-act="toggleDone">${ui.showDone ? '▾' : '▸'} Completed (${done.length})</button>
+        ${ui.showDone ? done.map(r => clRow(r, false, false)).join('') : ''}` : ''}
+      <p class="cl-foot"><button class="btn ghost sm" data-act="tab" data-tab="routines">Edit routine</button></p>
     </div>`;
   },
 
@@ -1339,10 +1370,8 @@ const CLICK = {
     commit(`Saved “${name}” to favourites`);
   },
   logMeal: el => {
-    ui.ai.meal = el.dataset.meal; ui.ai.pending = null;
-    if (!ui.ai.available) { ui.tab = 'food'; render(); window.scrollTo(0, 0); return; }
-    render();
-    const t = $('#aiText'); if (t) { t.scrollIntoView({ block: 'center' }); t.focus(); }
+    ui.ai.meal = el.dataset.meal; ui.ai.pending = null; ui.tab = 'food'; prefSet('tab', 'food'); render(); window.scrollTo(0, 0);
+    const t = $('#aiText'); if (t) t.focus({ preventScroll: true });
   },
   aiMealClear: () => { ui.ai.meal = ''; render(); },
   shopTab: el => { ui.shopTab = el.dataset.k; render(); },
