@@ -6,12 +6,13 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MEAL_SLOTS = ['Breakfast', 'Lunch', 'Pre-gym', 'Dinner', 'Bedtime'];
 const MEAL_INFO = { // slot -> [time, icon, timeline title]
-  Breakfast: ['09:45', '🥤', 'Smoothie'], Lunch: ['13:30', '🍱', 'Lunch'], 'Pre-gym': ['17:00', '🍌', 'Pre-gym snack'],
+  Breakfast: ['09:35', '🥤', 'Smoothie'], Lunch: ['13:30', '🍱', 'Lunch'], 'Pre-gym': ['17:00', '🍌', 'Pre-gym snack'],
   Dinner: ['20:15', '🍽️', 'Dinner'], Bedtime: ['23:00', '🍨', 'Bedtime snack'],
 };
 const STORES = ['Sobeys', 'Costco', 'Other'];
 const STORE_LABEL = { Sobeys: 'Sobeys', Costco: 'Costco', Other: 'Pharmacy / other' };
 const ROUTINE_CATS = {
+  habits: { label: 'Habits', icon: '🎯' },
   morning: { label: 'Shower & skin', icon: '🚿' },
   meds: { label: 'Hair & meds', icon: '💊' },
   cleaning: { label: 'Cleaning', icon: '🧽' },
@@ -31,9 +32,22 @@ const TABS = [
   ['today', 'Today', '🏠'], ['food', 'Food', '🍽️'], ['gym', 'Gym', '🏋️'], ['cardio', 'Hockey', '🏒'],
   ['meals', 'Shop', '🛒'], ['routines', 'Routines', '🧼'], ['progress', 'Weight', '📈'],
 ];
-const STREAK_DEFAULTS = { food: true, water: true, train: true, routines: true };
-const BUILD = 'v9';
-const DATA_VERSION = 5;
+const STREAK_DEFAULTS = { food: true, water: true, train: true, habits: true, routines: true };
+const BUILD = 'v10';
+// Daily habits: some to build, some to break. Each one gets its own day counter.
+const HABIT_DEFAULTS = [
+  { time: '09:35', name: 'Vitamin D3 with the smoothie', opts: { habit: 'build', icon: '☀️' } },
+  { time: '13:15', name: '10 min outside in daylight', opts: { habit: 'build', icon: '🌤️' } },
+  { time: '23:45', name: 'Phone away, wind down', opts: { habit: 'build', icon: '📵' } },
+  { time: '23:55', name: 'No weed today', opts: { habit: 'break', icon: '🚭' } },
+  { time: '23:58', name: 'Lights out by 12:30', opts: { habit: 'build', icon: '😴' } },
+];
+const DINNERS = {
+  1: 'Meatballs + pasta + side salad', 2: 'Salmon + rice + broccoli', 3: 'Rotisserie chicken burrito bowl (rice, beans, peppers, cheese)',
+  4: 'Ground beef stir-fry + frozen veg + rice', 5: 'Burgers + sweet potato fries + salad', 6: 'Game day: chicken pasta',
+  0: 'Roast chicken, potatoes & veg (cook extra for lunches)',
+};
+const DATA_VERSION = 6;
 
 /* ---------- date helpers (local dates as YYYY-MM-DD) ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -61,11 +75,11 @@ function defaults() {
   const sup = (name, cat, store) => ({ id: uid(), name, cat, store, status: 'ok', inCart: false });
   const f = (name, qty, cal, protein, carbs, fat) => ({ name, qty, meal: 'Breakfast', cal, protein, carbs, fat });
   const out = 'Eating out: Subway footlong, or sushi + an extra roll (aim 800+ kcal)';
-  return {
+  const fresh = {
     version: DATA_VERSION,
     settings: {
       unit: 'lb', calories: 3200, gameCalories: 3500, protein: 165, carbs: 430, fat: 90,
-      waterTarget: 3500, bottleMl: 700, cardioCalories: 200, goalWeight: 170, weeklyGain: 0.75, theme: 'auto', wake: '09:00',
+      waterTarget: 3500, bottleMl: 700, cardioCalories: 200, goalWeight: 170, weeklyGain: 0.75, theme: 'auto', wake: '09:30',
       streakCats: { ...STREAK_DEFAULTS },
     },
     hockey: { ranges: [{ start: '2026-11-07', end: '2026-12-05' }, { start: '2027-01-09', end: '2027-01-31' }], preseasonEnd: '2026-11-06' },
@@ -91,8 +105,9 @@ function defaults() {
     },
     events: [], // extra sessions: {id, date, time, type, title, mins, done}
     routines: [
-      r('morning', '09:05', 'Shower: shampoo + conditioner, face cleanser, SA Lotion on body'),
-      r('morning', '09:30', 'SPF moisturizer on face'),
+      ...HABIT_DEFAULTS.map(h => r('habits', h.time, h.name, h.opts)),
+      r('morning', '09:45', 'Shower: shampoo + conditioner, face cleanser, SA Lotion on body'),
+      r('morning', '10:05', 'SPF moisturizer on face'),
       r('cleaning', '10:00', 'Garbage + recycling out', { days: [3] }),
       r('cleaning', '21:00', 'Dishes done or dishwasher running'),
       r('cleaning', '21:00', 'Wipe counters + stovetop'),
@@ -134,7 +149,7 @@ function defaults() {
       sup('PVL creatine', 'food', 'Other'),
       ...['Paper towels', 'Toilet paper', 'Dishwasher pods', 'Garbage bags', 'Disinfecting wipes'].map(n => sup(n, 'cleaning', 'Costco')),
       ...['Dish soap', 'All-purpose spray', 'Glass cleaner', 'Bathroom + shower cleaner', 'Toilet bowl cleaner', 'Sponges + scrub brushes', 'Floor cleaner (mop)', 'Mop head', 'Vacuum bags / filter'].map(n => sup(n, 'cleaning', 'Sobeys')),
-      sup('Kirkland minoxidil 5%', 'care', 'Costco'),
+      sup('Kirkland minoxidil 5%', 'care', 'Costco'), sup('Vitamin D3 1,000 IU', 'care', 'Costco'),
       sup('Laundry detergent', 'laundry', 'Costco'), sup('Dryer sheets', 'laundry', 'Sobeys'), sup('Stain remover', 'laundry', 'Sobeys'),
       ...['CeraVe cleanser', 'CeraVe moisturizer', 'CeraVe AM SPF moisturizer', 'CeraVe SA Lotion', 'Native shampoo', 'Native conditioner', 'Felix gel low: get a finasteride Rx + buy Kirkland minoxidil', 'Generic finasteride 1 mg (Rx)'].map(n => sup(n, 'care', 'Other')),
     ],
@@ -157,6 +172,15 @@ function defaults() {
     },
     created: todayISO(),
   };
+  applyDinners(fresh.meals);
+  return fresh;
+}
+function applyDinners(meals) {
+  for (const [dw, dinner] of Object.entries(DINNERS)) {
+    const p = meals.plan[dw] || (meals.plan[dw] = []);
+    p[3] = dinner;
+    p[4] = +dw % 2 ? 'Greek yogurt + granola + honey + berries' : 'PB + honey toast ×2 + big glass of milk';
+  }
 }
 
 function migrate(s) {
@@ -195,6 +219,18 @@ function migrate(s) {
     const add = (name, store) => { if (!s.supplies.some(x => x.name === name)) s.supplies.push({ id: uid(), name, cat: 'care', store, status: 'ok', inCart: false }); };
     add('Kirkland minoxidil 5%', 'Costco'); add('Generic finasteride 1 mg (Rx)', 'Other');
     s.version = 5;
+  }
+  if (s.version < 6) {
+    // dialled-in day: wake 9:30, habits to build and break, vitamin D, new dinner rotation
+    s.settings = { ...(s.settings || {}), wake: '09:30' };
+    (s.routines || []).forEach(x => {
+      if (/^Shower:/.test(x.name) && x.time === '09:05') x.time = '09:45';
+      if (x.name === 'SPF moisturizer on face' && x.time === '09:30') x.time = '10:05';
+    });
+    for (const h of HABIT_DEFAULTS) if (!s.routines.some(x => x.name === h.name)) s.routines.push({ id: uid(), cat: 'habits', time: h.time, name: h.name, days: [], weeks: 'all', monthly: false, streak: true, ...h.opts });
+    if (!s.supplies.some(x => /Vitamin D3/.test(x.name))) s.supplies.push({ id: uid(), name: 'Vitamin D3 1,000 IU', cat: 'care', store: 'Costco', status: 'low', inCart: false });
+    if (s.meals && s.meals.plan) applyDinners(s.meals);
+    s.version = 6;
   }
   for (const k of Object.keys(d)) if (s[k] === undefined) s[k] = d[k];
   s.settings = { ...d.settings, ...s.settings };
@@ -363,7 +399,7 @@ function dayPlan(d) {
   rows.push({ key: 'wake', time: S.settings.wake || '09:00', icon: '⏰', title: 'Wake up', kind: 'info' });
   if (dw >= 1 && dw <= 5) rows.push({ key: 'work', time: '10:30', icon: '💼', title: 'Work', sub: '10:30 am – 6:30 pm', kind: 'info' });
   for (const r of S.routines) {
-    if (routineApplies(r, d)) rows.push({ key: r.id, time: r.time, icon: (ROUTINE_CATS[r.cat] || ROUTINE_CATS.other).icon, title: r.name, cat: r.cat, kind: 'check', done: isDone(d, r.id), streak: r.streak !== false });
+    if (routineApplies(r, d)) rows.push({ key: r.id, time: r.time, icon: r.icon || (ROUTINE_CATS[r.cat] || ROUTINE_CATS.other).icon, title: r.name, cat: r.cat, habit: r.habit, kind: 'check', done: isDone(d, r.id), streak: r.streak !== false });
   }
   const items = (S.nutrition[d] && S.nutrition[d].items) || [];
   for (const slot of MEAL_SLOTS) {
@@ -456,12 +492,15 @@ function dayInfo(d) {
   const plan = dayPlan(d), s = S.settings, cats = { ...STREAK_DEFAULTS, ...s.streakCats };
   const n = nut(d), ct = calTarget(d), water = S.water[d] || 0;
   const train = plan.filter(r => r.cat === 'train');
-  const rt = plan.filter(r => r.kind === 'check' && r.cat !== 'train' && r.streak);
+  const rt = plan.filter(r => r.kind === 'check' && r.cat !== 'train' && r.cat !== 'habits' && r.streak);
+  const hb = plan.filter(r => r.kind === 'check' && r.cat === 'habits' && r.streak);
+  const hbDone = hb.filter(r => r.done).length;
   const trainDone = train.filter(r => r.done).length, rtDone = rt.filter(r => r.done).length;
   const groups = [
     { k: 'food', icon: '🍽️', label: 'Food', done: n.cal >= ct * 0.9 && n.protein >= s.protein * 0.9, text: `${round(n.cal, 0).toLocaleString()} / ${ct.toLocaleString()} kcal · ${round(n.protein, 0)} / ${s.protein} g protein`, pct: Math.min(n.cal / ct, n.protein / s.protein), go: 'food' },
     { k: 'water', icon: '💧', label: 'Water', done: water >= s.waterTarget, text: `${bottles(water)} / ${bottles(s.waterTarget)} shakers`, pct: water / s.waterTarget },
     { k: 'train', icon: '🏋️', label: 'Training', done: trainDone >= train.length, text: train.length ? `${trainDone} / ${train.length} done` : 'Rest day', pct: train.length ? trainDone / train.length : 1, rest: !train.length },
+    { k: 'habits', icon: '🎯', label: 'Habits', done: hbDone >= hb.length, text: `${hbDone} / ${hb.length} done`, pct: hb.length ? hbDone / hb.length : 1 },
     { k: 'routines', icon: '✅', label: 'Routines', done: rtDone >= rt.length, text: `${rtDone} / ${rt.length} done`, pct: rt.length ? rtDone / rt.length : 1 },
   ];
   groups.forEach(g => { g.required = !!cats[g.k]; g.pct = Math.max(0, Math.min(1, g.pct || 0)); });
@@ -517,10 +556,11 @@ function timelineRow(r, isToday, nowT) {
 function timeline(d, plan) {
   const isToday = d === todayISO(); const now = new Date(); const nowT = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const parts = [['Morning', '00:00'], ['Afternoon', '12:00'], ['Evening', '17:00'], ['Night', '21:30']];
-  let html = ''; let nowShown = !isToday;
+  const doneN = plan.filter(r => r.done && r.kind !== 'info').length;
+  let html = doneN ? `<button class="btn ghost sm tl-toggle" data-act="toggleDone">${ui.showDone ? 'Hide' : 'Show'} ${doneN} done</button>` : ''; let nowShown = !isToday;
   parts.forEach(([label, from], i) => {
     const to = parts[i + 1] ? parts[i + 1][1] : '99:99';
-    const rows = plan.filter(r => r.time >= from && r.time < to);
+    const rows = plan.filter(r => r.time >= from && r.time < to && (ui.showDone || !r.done || r.kind === 'info'));
     if (!rows.length) return;
     html += `<h3 class="tl-part">${label}</h3>`;
     for (const r of rows) {
@@ -529,6 +569,70 @@ function timeline(d, plan) {
     }
   });
   return html;
+}
+// Consecutive days a habit was checked, counting back from today (or yesterday if today isn't checked yet)
+function habitStreak(id) {
+  let d = todayISO(); if (!isDone(d, id)) d = addDays(d, -1);
+  let n = 0; while (n < 1000 && isDone(d, id)) { n++; d = addDays(d, -1); }
+  return n;
+}
+function upNext(plan, d) {
+  const isToday = d === todayISO(); const now = new Date(); const nowT = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const items = plan.filter(r => r.kind !== 'info'); const todo = items.filter(r => !r.done);
+  const pct = items.length ? Math.round(((items.length - todo.length) / items.length) * 100) : 100;
+  const bar = `<div class="un-bar"><div class="qbar"><span style="width:${pct}%"></span></div><span>${items.length - todo.length} / ${items.length} done</span></div>`;
+  if (!todo.length) return `<section class="card wide upnext all-done"><div class="un-main"><div class="un-icon">🏁</div><div class="un-text"><div class="un-label">All done</div><div class="un-title">Everything's checked off. That's a completed day.</div></div></div>${bar}</section>`;
+  const r = todo[0]; const late = isToday && r.time < nowT;
+  let action;
+  if (r.kind === 'check') action = `<button class="btn primary big-btn" data-act="chkOn" data-key="${r.key}">✓ Done</button>`;
+  else if (r.kind === 'meal') {
+    const fav = r.slot === 'Breakfast' && S.favorites[0];
+    action = fav ? `<button class="btn primary big-btn" data-act="fav" data-id="${fav.id}" data-meal="Breakfast">✓ Log smoothie</button>` : `<button class="btn primary big-btn" data-act="logMeal" data-meal="${r.slot}">Log ${esc(r.title.toLowerCase())}</button>`;
+  } else if (r.kind === 'gym') action = `<button class="btn primary big-btn" data-act="go" data-go="gym" data-day="${r.dayId}">Start workout</button>`;
+  else action = '<button class="btn primary big-btn" data-act="go" data-go="meals">Open list</button>';
+  return `<section class="card wide upnext ${late ? 'late' : ''}">
+    <div class="un-main"><div class="un-icon">${r.icon}</div>
+      <div class="un-text"><div class="un-label">${late ? 'Overdue' : 'Up next'} · ${fmtTime(r.time)}</div>
+        <div class="un-title">${esc(r.title)}</div>${r.sub ? `<div class="un-sub">${esc(r.sub)}</div>` : ''}</div></div>
+    ${action}
+    ${todo.length > 1 ? `<div class="un-then">Then: ${todo.slice(1, 3).map(x => `${x.icon} ${esc(x.title)}`).join(' · ')}</div>` : ''}
+    ${bar}</section>`;
+}
+function habitsCard() {
+  const hs = S.routines.filter(r => r.cat === 'habits');
+  const month = todayISO().slice(0, 7);
+  const lifts = new Set(Object.values(S.gym.logs).filter(l => l.date.startsWith(month) && Object.values(l.entries).some(sets => sets.some(x => num(x.r) > 0))).map(l => l.date)).size;
+  const row = (icon, name, val, label, cls) => `<div class="hb-row ${cls}"><span class="hb-icon">${icon}</span><span class="hb-name">${esc(name)}</span><span class="hb-count"><b>${val}</b> ${label}</span></div>`;
+  const brk = hs.filter(h => h.habit === 'break'), bld = hs.filter(h => h.habit !== 'break');
+  return `<section class="card"><h2>🎯 Habits</h2>
+    ${brk.length ? `<h3>Breaking</h3>${brk.map(h => { const n = habitStreak(h.id); return row(h.icon || '🚫', h.name.replace(/ today$/, ''), n, n === 1 ? 'day clean' : 'days clean', 'break'); }).join('')}` : ''}
+    <h3>Building</h3>
+    ${row('🏋️', 'Gym', lifts, lifts === 1 ? 'lift this month' : 'lifts this month', 'build')}
+    ${bld.map(h => { const n = habitStreak(h.id); return row(h.icon || '✅', h.name, n, 'day streak', 'build'); }).join('')}
+    <p class="muted small">Check them off in your schedule. Edit them under Routines → Habits.</p></section>`;
+}
+function daysStack(st) {
+  const today = todayISO();
+  const weeks = Math.min(12, Math.max(4, Math.floor(diffDays(startOfWeek(today), startOfWeek(S.created)) / 7) + 1));
+  const first = addDays(startOfWeek(today), -7 * (weeks - 1));
+  let total = 0;
+  for (let x = S.created; x <= today; x = addDays(x, 1)) if (st.info(x).complete) total++;
+  let cells = '';
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = addDays(first, i);
+    let cls = 'none', style = '', title = fmtDate(d);
+    if (d > today) cls = 'future';
+    else if (d >= S.created) {
+      const inf = st.info(d);
+      if (inf.complete) { cls = 'full'; title += ': complete'; }
+      else { const p = inf.reqCount ? inf.doneCount / inf.reqCount : 0; cls = p ? 'part' : 'empty'; style = p ? ` style="--p:${(0.2 + p * 0.5).toFixed(2)}"` : ''; title += `: ${inf.doneCount} of ${inf.reqCount}`; }
+    }
+    cells += `<i class="dc ${cls} ${d === today ? 'is-today' : ''}"${style} title="${title}"></i>`;
+  }
+  return `<section class="card"><h2>🔥 Completed days <span class="pill good">${total} total</span></h2>
+    <div class="dstack-head">${[1, 2, 3, 4, 5, 6, 0].map(i => `<span>${DOW[i][0]}</span>`).join('')}</div>
+    <div class="dstack">${cells}</div>
+    <p class="muted small">Every full square is a completed day. Stack them up: that's how you hit 170 lb and get game-ready.</p></section>`;
 }
 function celebrate(n) {
   const el = document.createElement('div'); el.className = 'celebrate'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Day complete');
@@ -772,6 +876,7 @@ const VIEWS = {
         <p class="hero-msg">${esc(msg)}</p>
         ${weekStrip(st)}
       </section>
+      ${upNext(di.plan, d)}
       <section class="card wide">
         <h2>${isToday ? 'Today' : fmtDate(d, { weekday: 'long', month: 'short', day: 'numeric' })} <span class="pill ${hw ? 'warn' : 'accent'}">${hw ? '🏒 Hockey week' : 'Normal week'}</span></h2>
         <div class="ptiles">${di.groups.map(g => progressTile(g, d)).join('')}</div>
@@ -780,6 +885,8 @@ const VIEWS = {
         <h2>Your schedule <button class="btn ghost sm" data-act="tab" data-tab="routines">Edit</button></h2>
         ${timeline(d, di.plan)}
       </section>
+      ${habitsCard()}
+      ${daysStack(st)}
       ${aiCard()}
       ${macroCard(true)}
       <div class="card"><h2>⚖️ Weigh-in <span class="pill">Bonus</span></h2>
@@ -1014,7 +1121,7 @@ const VIEWS = {
         <button class="btn sm" style="margin-top:10px" data-act="macroCalc">Fill carbs + fat from calories</button></div>
       <div class="card"><h2>🔥 Streak rules</h2>
         <p class="small">A day counts toward your streak when every ticked part is done.</p>
-        ${[['food', 'Food: 90% of calories and protein'], ['water', 'Water target'], ['train', 'Training: gym, cardio and hockey on the schedule'], ['routines', 'Routines: every schedule task marked "Counts for streak"']].map(([k, l]) =>
+        ${[['food', 'Food: 90% of calories and protein'], ['water', 'Water target'], ['train', 'Training: gym, cardio and hockey on the schedule'], ['habits', 'Habits: every habit check-in'], ['routines', 'Routines: every schedule task marked "Counts for streak"']].map(([k, l]) =>
           `<label class="check"><input type="checkbox" data-act="streakCat" data-k="${k}" ${({ ...STREAK_DEFAULTS, ...s.streakCats })[k] ? 'checked' : ''}><span class="name">${l}</span></label>`).join('')}
       </div>
       <div class="card"><h2>☁️ Sync</h2><p class="small">${esc(SYNC_LABEL[cloud.status])}.${cloud.col ? ' Your data is saved to your private claude.ai storage and syncs across your devices.' : ' Your data is stored in this browser only. Export a backup regularly.'}</p></div>
@@ -1201,6 +1308,11 @@ async function download(name, text) {
 }
 
 const CLICK = {
+  chkOn: el => {
+    const c = S.checks[ui.date] || (S.checks[ui.date] = {}); c[el.dataset.key] = true;
+    commit('✓ Done');
+  },
+  toggleDone: () => { ui.showDone = !ui.showDone; render(); },
   go: el => {
     const g = el.dataset.go;
     if (el.dataset.day) ui.gymDay = el.dataset.day;
